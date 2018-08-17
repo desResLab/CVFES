@@ -12,6 +12,7 @@ from cvconfig import CVConfig
 # from cvcomm import CVCOMM
 from mpi4py import MPI
 from mesh import *
+from solver import *
 from math import floor
 from parmetis import PyParMETIS_V3_PartMeshKway
 
@@ -202,6 +203,14 @@ class CVFES:
         mesh.elementsMap = myElms
 
         # !!! After the distribution/partitioning no processor has all elements in the whole mesh again.
+
+        # TODO:: Save the partition results into local files and read from files if existing.
+
+        # TODO:: Try to read the existing calculated results from local files, if exists start from there,
+        #        if not start from initial conditions.
+
+
+        # TODO:: Write the solution has been calculated into files when program has been cutoff accidentally.
 
 
     def Solve(self):

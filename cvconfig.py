@@ -46,6 +46,16 @@ class MeshConfig(Config):
         # print 'Mesh {} contains {} faces in domain {}\n'.format(self.name, len(self.faces), self.domainId)
 
 
+class SolverConfig():
+
+    def __init__(self, solverSection):
+        self.method = solverSection['method']
+        self.time = solverSection.as_float('time')
+        self.dt = solverSection.as_float('dt')
+        self.endtime = solverSection.as_float('endtime')
+        self.tolerance = solverSection.as_float('tolerance')
+
+
 class CVConfig:
 
     def __init__(self, config):
@@ -62,4 +72,7 @@ class CVConfig:
                     self.meshes.append(MeshConfig(meshesConfig[section]))
         except KeyError as ex:
             print('Key {} does not exits!'.format(ex))
+
+        # Solver parameters.
+        self.solver = SolverConfig(config['solver'])
 
