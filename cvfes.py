@@ -39,7 +39,7 @@ class CVFES:
         # Read configuration file.
         self.cvConfig = CVConfig(ConfigObj(filename))
         # Loading meshes.
-        self.meshes = [Mesh(msh.file_path, msh.domainId) for msh in self.cvConfig.meshes]
+        self.meshes = [Mesh(msh) for msh in self.cvConfig.meshes]
 
     def Distribute(self, meshNo):
         """ Distribute the meshes between processors using ParMETIS lib. """
@@ -201,6 +201,17 @@ class CVFES:
         mesh.nElements = myCounter
         mesh.elements = mesh.elements[myElms]
         mesh.elementsMap = myElms
+        # Update the initial conditions corresponding the sub-mesh of each processor.
+        # Construct the indices array first.
+        indicesOfDof = np.zeros(3*myCounter, dtype=int)
+        indicesOfDof[3*np.arange(myCounter)] = 3 * myElms
+        indicesOfDof[3*np.arange(myCounter)+1] = 3 * myElms + 1
+        indicesOfDof[3*np.arange(myCounter)+2] = 3 * myElms + 2
+        # Update the initial conditions based on the indices constructed.
+        mesh.iniDu = mesh.iniDu[indicesOfDof]
+        mesh.iniU = mesh.iniU[indicesOfDof]
+        mesh.iniP = mesh.iniP[indicesOfDof]
+        mesh.iniD = mesh.iniD[indicesOfDof]
 
         # !!! After the distribution/partitioning no processor has all elements in the whole mesh again.
 

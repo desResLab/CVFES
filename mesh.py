@@ -6,6 +6,7 @@
 
     CVFES class is the main solver of the CVFES project.
 """
+from cvconfig import CVConfig
 import numpy as np
 
 from vtk.util.numpy_support import vtk_to_numpy
@@ -34,10 +35,10 @@ class Mesh:
         Right now one vtp file corresponds to one mesh and one domain.
     """
 
-    def __init__(self, filename, domainId):
+    def __init__(self, meshConfig):
 
-        reader = vtk.vtkXMLPolyDataReader() if filename.endswith('vtp') else vtk.vtkUnstructuredGridReader()
-        reader.SetFileName(filename)
+        reader = vtk.vtkXMLPolyDataReader() if meshConfig.file_path.endswith('vtp') else vtk.vtkUnstructuredGridReader()
+        reader.SetFileName(meshConfig.file_path)
         reader.Update()
 
         polyDataModel = reader.GetOutput()
@@ -57,6 +58,44 @@ class Mesh:
         self.gnElements = self.nElements
 
         # Set the domain id.
-        self.domainId = domainId
+        self.domainId = meshConfig.domainId
+        # Set the total number of degree of freedoms.
+        self.ndof = 3 * self.nNodes
+
+        # Set the initial conditions.
+        # TODO:: might need to reconsider how to organize the structure of configuration,
+        #        maybe open the initial condition file only once is enough.
+        self.setInitialConditions(meshConfig.initialConditions)
+
+    def setInitialConditions(self, iniCondConfig):
+        # Set the acceleration
+        self.setInitialCondition(iniCondConfig.acceleration, self.iniDu, 'acceleration')
+        # Set the velocity
+        self.setInitialCondition(iniCondConfig.velocity, self.iniU, 'velocity')
+        # Set the pressure
+        self.setInitialCondition(iniCondConfig.pressure, self.iniP, 'pressure')
+        # Set the displacement
+        self.setInitialCondition(iniCondConfig.displacement, self.iniD, 'displacement')
+
+    def setInitialCondition(self, value, prop, fieldname=None):
+        """ Setting the initial conditions of the mesh based on the configuration,
+            if it's presetting uniform value then set it to the whole geometry
+            otherwise read it from geometry (vtp) files.
+        """
+        if isinstance(value, str):
+
+            reader = vtk.vtkXMLPolyDataReader() if value.endswith('vtp') else vtk.vtkUnstructuredGridReader()
+            reader.SetFileName(value)
+            reader.Update()
+
+            polyDataModel = reader.GetOutput()
+
+            # TODO:: check the compatibility between initial condition file and the mesh's geometry
+
+            prop = vtk_to_numpy(polyDataModel.GetPointData().GetArray(fieldname))
+
+        else:
+            prop = np.zeros(self.ndof)
+            prop = value
 
 

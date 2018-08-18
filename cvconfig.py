@@ -20,13 +20,34 @@ class Config:
             self.name = config['name']
             self.file_path = config['file_path']
         except KeyError as ex:
-            print('Key {} does not exits!'.format(ex))
+            print('Key {} does not exit!'.format(ex))
 
 
 class FaceConfig(Config):
 
     def __init__(self, faceSection):
         Config.__init__(self, faceSection)
+
+
+class InitialConditionsConfig:
+
+    def __init__(self, iniCndSection):
+        self.set(iniCndSection, 'acceleration', self.acceleration)
+        self.set(iniCndSection, 'velocity', self.velocity)
+        self.set(iniCndSection, 'pressure', self.pressure)
+        self.set(iniCndSection, 'displacement', self.displacement)
+
+    def set(self, config, key, prop):
+        try:
+            subConfig = config[key]
+            if 'uniform_value' in subConfig:
+                prop = subConfig.as_float('uniform_value')
+            elif 'file_name' in subConfig:
+                prop = subConfig['file_name']
+            else:
+                print('Failed to get initial conditions configuration for {}\'s {}.'.format(config.parent.name, key))
+        except KeyError as ex:
+            print('Key {} does not exist!'.format(ex))
 
 
 class MeshConfig(Config):
@@ -41,6 +62,8 @@ class MeshConfig(Config):
             for section in facesConfig.sections:
                 if section.startswith('face'):
                     self.faces.append(FaceConfig(facesConfig[section]))
+
+        self.initialConditions = InitialConditionsConfig(meshSection['initial conditions'])
 
         # DEBUG:
         # print 'Mesh {} contains {} faces in domain {}\n'.format(self.name, len(self.faces), self.domainId)
