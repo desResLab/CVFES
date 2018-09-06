@@ -26,7 +26,7 @@ def main():
 
     cv.Distribute(0)
 
-    cv.Solve()
+    cv.Solve(0)
 
 if __name__ == "__main__":
     main()

@@ -30,6 +30,7 @@ class Element:
 
         # TODO::Add edges info if needed later.
 
+
 class Mesh:
     """ Mesh structure, contains nodes and elements primarily.
         Right now one vtp file corresponds to one mesh and one domain.
@@ -59,6 +60,11 @@ class Mesh:
 
         # Set the domain id.
         self.domainId = meshConfig.domainId
+        # Set the physical parameters.
+        self.density = meshConfig.density
+        self.E = meshConfig.E
+        self.v = meshConfig.v
+
         # Set the total number of degree of freedoms.
         self.ndof = 3 * self.nNodes
 
@@ -69,15 +75,21 @@ class Mesh:
 
     def setInitialConditions(self, iniCondConfig):
         # Set the acceleration
-        self.setInitialCondition(iniCondConfig.acceleration, self.iniDu, 'acceleration')
+        self.iniDDu = self.setCondition(iniCondConfig.acceleration, 'acceleration')
         # Set the velocity
-        self.setInitialCondition(iniCondConfig.velocity, self.iniU, 'velocity')
+        self.iniDu = self.setCondition(iniCondConfig.velocity, 'velocity')
         # Set the pressure
-        self.setInitialCondition(iniCondConfig.pressure, self.iniP, 'pressure')
+        self.iniP = self.setCondition(iniCondConfig.pressure, 'pressure')
         # Set the displacement
-        self.setInitialCondition(iniCondConfig.displacement, self.iniD, 'displacement')
+        self.iniU = self.setCondition(iniCondConfig.displacement, 'displacement')
 
-    def setInitialCondition(self, value, prop, fieldname=None):
+    def setBoundaryCondtions(self, bdyCondConfig):
+        # Set the traction
+        # TODO:: Switch btw getting traction from file and uniform value.
+        # self.trac = self.setCondition(bdyCondConfig.traction, 'traction')
+        self.traction = bdyCondConfig.traction
+
+    def setCondition(self, value, fieldname=None):
         """ Setting the initial conditions of the mesh based on the configuration,
             if it's presetting uniform value then set it to the whole geometry
             otherwise read it from geometry (vtp) files.
@@ -97,5 +109,7 @@ class Mesh:
         else:
             prop = np.zeros(self.ndof)
             prop = value
+
+        return prop
 
 

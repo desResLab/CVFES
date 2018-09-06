@@ -29,15 +29,12 @@ class FaceConfig(Config):
         Config.__init__(self, faceSection)
 
 
-class InitialConditionsConfig:
+class ConditionConfig:
 
     def __init__(self, iniCndSection):
-        self.set(iniCndSection, 'acceleration', self.acceleration)
-        self.set(iniCndSection, 'velocity', self.velocity)
-        self.set(iniCndSection, 'pressure', self.pressure)
-        self.set(iniCndSection, 'displacement', self.displacement)
+        pass
 
-    def set(self, config, key, prop):
+    def getProp(self, config, key):
         try:
             subConfig = config[key]
             if 'uniform_value' in subConfig:
@@ -49,12 +46,36 @@ class InitialConditionsConfig:
         except KeyError as ex:
             print('Key {} does not exist!'.format(ex))
 
+        return prop
+
+class InitialConditionsConfig(ConditionConfig):
+
+    def __init__(self, iniCndSection):
+
+        ConditionConfig.__init__(self)
+
+        self.acceleration = self.getProp(iniCndSection, 'acceleration')
+        self.velocity = self.getProp(iniCndSection, 'velocity')
+        self.pressure = self.getProp(iniCndSection, 'pressure')
+        self.displacement = self.getProp(iniCndSection, 'displacement')
+
+class BoundaryConditionsConfig(ConditionConfig):
+
+    def __init__(self, bdyCndSection):
+
+        ConditionConfig.__init__(self)
+
+        self.traction = self.getProp(bdyCndSection, 'traction')
+
 
 class MeshConfig(Config):
 
     def __init__(self, meshSection):
         Config.__init__(self, meshSection)
         self.domainId = meshSection.as_int('domain_id')
+        self.density = meshSection.as_float('density')
+        self.E = meshSection.as_float('Youngs Modulus')
+        self.v = meshSection.as_float('Poissons Ratio')
 
         self.faces = []
         if 'faces' in meshSection:
@@ -64,6 +85,7 @@ class MeshConfig(Config):
                     self.faces.append(FaceConfig(facesConfig[section]))
 
         self.initialConditions = InitialConditionsConfig(meshSection['initial conditions'])
+        self.boundaryConditions = BoundaryConditionsConfig(meshSection['boundary conditions'])
 
         # DEBUG:
         # print 'Mesh {} contains {} faces in domain {}\n'.format(self.name, len(self.faces), self.domainId)

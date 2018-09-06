@@ -10,9 +10,9 @@
 from configobj import ConfigObj
 from cvconfig import CVConfig
 # from cvcomm import CVCOMM
-from mpi4py import MPI
 from mesh import *
 from solver import *
+from mpi4py import MPI
 from math import floor
 from parmetis import PyParMETIS_V3_PartMeshKway
 
@@ -66,6 +66,7 @@ class CVFES:
         eind = np.empty(0, dtype=np.int64)
         for index, element in enumerate(mesh.elements[ihead:itail]):
             eptr[index+1] = eptr[index] + element.nNodes
+            # For effeciency, this need to be changed to allocate space first, then assign in another loop
             eind = np.append(eind, element.nodes)
 
         # Prepare other parameters.
@@ -224,7 +225,18 @@ class CVFES:
         # TODO:: Write the solution has been calculated into files when program has been cutoff accidentally.
 
 
-    def Solve(self):
-        pass
+    def Solve(self, meshNo):
+
+        solverSwitcher = {
+            'transient generalized-a': TransientGeneralizedASolver
+            'transient': TransientSolver
+        }
+
+        SolverClass = solverSwitcher.get(self.cvConfig.solver.method, lambda:'Invalid method!')
+
+        self.solver = SolverClass(self.meshes[meshNo], self.cvConfig.solver)
+        self.solver.Solve()
+
+        # TODO:: Write back the calculation result.
 
     # ? Finalize
