@@ -128,6 +128,9 @@ class SolidSolver(PhysicSolver):
     def Solve(self):
         pass
 
+    def GenerateSparseInfo(self):
+        # TODO: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     def Assemble(self):
         """ Now assume that:
             element type: triangular

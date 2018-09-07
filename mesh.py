@@ -48,6 +48,7 @@ class Mesh:
         self.nNodes = polyDataModel.GetNumberOfPoints() # _nNodes
         vtkNodes = polyDataModel.GetPoints().GetData()
         self.nodes = vtk_to_numpy(vtkNodes) # _nodes
+        self.commNodeIds = None # common nodes processor contains
 
         # Set the element groups.
         # Will be updated to sub-group after partition.
@@ -72,6 +73,7 @@ class Mesh:
         # TODO:: might need to reconsider how to organize the structure of configuration,
         #        maybe open the initial condition file only once is enough.
         self.setInitialConditions(meshConfig.initialConditions)
+        self.setBoundaryCondtions(meshConfig.boundaryConditions)
 
     def setInitialConditions(self, iniCondConfig):
         # Set the acceleration

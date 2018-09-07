@@ -202,21 +202,43 @@ class CVFES:
         mesh.nElements = myCounter
         mesh.elements = mesh.elements[myElms]
         mesh.elementsMap = myElms
-        # Update the initial conditions corresponding the sub-mesh of each processor.
-        # Construct the indices array first.
-        indicesOfDof = np.zeros(3*myCounter, dtype=int)
-        indicesOfDof[3*np.arange(myCounter)] = 3 * myElms
-        indicesOfDof[3*np.arange(myCounter)+1] = 3 * myElms + 1
-        indicesOfDof[3*np.arange(myCounter)+2] = 3 * myElms + 2
-        # Update the initial conditions based on the indices constructed.
-        mesh.iniDu = mesh.iniDu[indicesOfDof]
-        mesh.iniU = mesh.iniU[indicesOfDof]
-        mesh.iniP = mesh.iniP[indicesOfDof]
-        mesh.iniD = mesh.iniD[indicesOfDof]
 
         # !!! After the distribution/partitioning no processor has all elements in the whole mesh again.
 
         # TODO:: Save the partition results into local files and read from files if existing.
+
+        # Collect the common nodes between processors,
+        # root collect nodes numbers from each processor and count, the node which counts more
+        # than one will be set to the common and broadcast to all processors.
+        # And each processor will recognize the common nodes it has according to the info it received.
+        # Collect local nodes' numbers.
+        myNodes = np.empty(3*mesh.nElements, dtype=np.int64)
+        for iElm, elm in enumerate(mesh.elements):
+            myNodes[3*iElm : 3*(iElm+1)] = elm.nodes
+        # Start to send and recv to filter the common nodes.
+        if self.rank == 0:
+            # Prepare the counter vector.
+            nodesCounter = np.zeros(mesh.nNodes, dtype=int)
+            # Start to count.
+            nodesCounter[myNodes] += 1
+            # Receive and count.
+            nodesBuffer = np.empty(mesh.nNodes, dtype=np.int64)
+            nodesInfo = MPI.Status()
+            for i in xrange(1, self.size):
+                self.comm.Recv(nodesBuffer, MPI.ANY_SOURCE, TAG_NODE_INFO, nodesInfo)
+                nodesCounter[nodesBuffer[:nodesInfo.Get_count(MPI.INT64_T)]] += 1
+            # Filter out the common nodes.
+            commonNodes = np.where(nodesCounter > 1)[0]
+        else:
+            self.comm.Send(myNodes, 0, TAG_NODE_INFO)
+            commonNodes = None
+
+        # Broadcast the common nodes to everyone.
+        commonNodes = self.comm.Bcast(commonNodes, root=0)
+
+        # Recognize the common nodes I contain.
+        # mesh.commNodeIds = np.array(list(set(commonNodes).intersection(myNodes)))
+        mesh.commNodeIds = np.intersect1d(commonNodes, myNodes)
 
         # TODO:: Try to read the existing calculated results from local files, if exists start from there,
         #        if not start from initial conditions.
