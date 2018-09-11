@@ -30,17 +30,23 @@ TAG_COMM_DOF_VALUE = 212
 """
 class Shape:
 
-    def __init__(self, nodes, area):
+    def __init__(self, nodes):
         self.nodes = nodes
-        self.area = area
+        self.area = 0.0
 
 class TriangularForSolid(Shape):
-    """ Constant-strain triangular element for solid. """
+    """ Constant-strain triangular element for solid.
+        Make sure the nodes used are on the local plane.
+    """
 
     k = 5.0/6.0 # parameter for CMM method (refer to CMM paper)
 
-    def __init__(self, nodes, area):
-        Shape.__init__(self, nodes, area)
+    def __init__(self, nodes):
+        Shape.__init__(self, nodes)
+
+        self.area = np.linalg.det([[1, nodes[0,0], nodes[0,1]],
+                                   [1, nodes[1,0], nodes[1,1]],
+                                   [1, nodes[2,0], nodes[2,1]]]) * 0.5
 
     def N(self, xi):
         return np.array([[xi[0], 0, 0, xi[1], 0, 0, xi[2], 0, 0],
@@ -270,16 +276,16 @@ class SolidSolver(PhysicSolver):
             # Transform.
             nodes = np.dot(nodes, np.transpose(T))
             # Calculate local mass and stiffness matrix.
-            triangular = TriangularForSolid(nodes, elm.area)
+            triangular = TriangularForSolid(nodes)
             localM = GaussianQuadrature.Integrate(
                             lambda xi: np.dot(np.transpose(triangular.N(xi)),triangular.N(xi)),
-                            elm.area) * self.mesh.density
-            localK = np.dot(np.dot(np.transpose(triangular.B()), tD), triangular.B()) * elm.area
+                            triangular.area) * self.mesh.density
+            localK = np.dot(np.dot(np.transpose(triangular.B()), tD), triangular.B()) * triangular.area
             # Calculate the RHS f.
             # TODO:: Add the body force and initial stress and strain conditions.
             # TODO:: Figure out what's the form of body force, traction and initial strain, eg. what's the right hand side.
             # TODO:: Form a official way to calculate the force item.
-            localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * elm.area / 3.0
+            localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * triangular.area / 3.0
             # Transform back to the glocal coordinates.
             bT = SolidSolver.BigTransformation(T)
             bTp = np.transpose(bT)
@@ -354,8 +360,24 @@ class SolidSolver(PhysicSolver):
 
     def PostProcess(self):
         # Update the coordinate.
+        self.mesh.UpdateCoordinates(self.u)
         # Calculate the stress with updated coordinates.
-        pass
+        tD = TriangularForSolid.D(self.mesh.E, self.mesh.v)
+        for iElm, elm in enumerate(self.mesh.elements):
+            # Get element nodes with coordinates.
+            nodes = self.mesh.nodes[elm.nodes]
+            # Transform the global coordinates into local plain one.
+            T = SolidSolver.CoordinateTransformation(nodes)
+            # Transform.
+            nodes = np.dot(nodes, np.transpose(T))
+            # Calculate local mass and stiffness matrix.
+            triangular = TriangularForSolid(nodes)
+            # Compute the stress = D.B.u
+            localDofs = SparseInfo.GenerateDof(elm.nodes, SolidSolver.Dof)
+            localStress = np.dot(np.dot(tD, triangular.B()), self.u[localDofs])
+
+            # TODO:: ???????????????????????????????????????
+
 
     @staticmethod
     def CoordinateTransformation(nodes):

@@ -26,7 +26,7 @@ class Element:
         for ipt in xrange(self.nNodes):
             self.nodes[ipt] = vtkCell.GetPointId(ipt)
 
-        self.area = vtkCell.ComputeArea() # Need to change, because element can update the displacement!
+        # self.area = vtkCell.ComputeArea() # Need to change, because element can update the displacement!
 
         # TODO::Add edges info if needed later.
 
@@ -123,5 +123,8 @@ class Mesh:
 
         Z = self.nodes[:, 2]
         self.boundary = np.where((abs(Z-np.amax(Z))<tol) | (abs(Z-np.amin(Z))<tol))[0]
+
+    def UpdateCoordinates(self, u):
+        self.nodes += np.reshape(u, (self.nNodes, 3))
 
 
