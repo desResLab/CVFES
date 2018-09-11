@@ -215,6 +215,7 @@ class CVFES:
         myNodes = np.empty(3*mesh.nElements, dtype=np.int64)
         for iElm, elm in enumerate(mesh.elements):
             myNodes[3*iElm : 3*(iElm+1)] = elm.nodes
+        myNodes = np.unique(myNodes)
         # Start to send and recv to filter the common nodes.
         if self.rank == 0:
             # Prepare the counter vector.
@@ -229,12 +230,16 @@ class CVFES:
                 nodesCounter[nodesBuffer[:nodesInfo.Get_count(MPI.INT64_T)]] += 1
             # Filter out the common nodes.
             commonNodes = np.where(nodesCounter > 1)[0]
+            nCommon = len(commonNodes)
         else:
             self.comm.Send(myNodes, 0, TAG_NODE_INFO)
-            commonNodes = None
+            nCommon = None
 
         # Broadcast the common nodes to everyone.
-        commonNodes = self.comm.Bcast(commonNodes, root=0)
+        nCommon = self.comm.bcast(nCommon, root=0)
+        if self.rank != 0:
+            commonNodes = np.empty(nCommon, dtype=np.int64)
+        self.comm.Bcast(commonNodes, root=0)
 
         # Recognize the common nodes I contain.
         # mesh.commNodeIds = np.array(list(set(commonNodes).intersection(myNodes)))
@@ -252,13 +257,17 @@ class CVFES:
     def Solve(self, meshNo):
 
         solverSwitcher = {
-            'transient generalized-a': TransientGeneralizedASolver
+            'transient generalized-a': TransientGeneralizedASolver,
             'transient': TransientSolver
         }
 
-        SolverClass = solverSwitcher.get(self.cvConfig.solver.method, lambda:'Invalid method!')
+        SolverClass = solverSwitcher.get(self.cvConfig.solver.method, None)
 
-        self.solver = SolverClass(self.meshes[meshNo], self.cvConfig.solver)
+        if SolverClass is None:
+            print('Unknown method: {}'.format(self.cvConfig.solver.method))
+            return
+
+        self.solver = SolverClass(self.comm, self.meshes[meshNo], self.cvConfig.solver)
         self.solver.Solve()
 
         # TODO:: Write back the calculation result.

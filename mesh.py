@@ -114,7 +114,7 @@ class Mesh:
 
         else:
             prop = np.zeros(self.ndof)
-            prop = value
+            prop[:] = value
 
         return prop
 

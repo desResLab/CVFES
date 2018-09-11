@@ -49,12 +49,12 @@ class TriangularForSolid(Shape):
 
     def B(self):
         # Calculate the temporary params.
-        y23 = nodes[1,1] - nodes[2,1]
-        y31 = nodes[2,1] - nodes[0,1]
-        y12 = nodes[0,1] - nodes[1,1]
-        x32 = nodes[2,0] - nodes[1,0]
-        x13 = nodes[0,0] - nodes[2,0]
-        x21 = nodes[1,0] - nodes[0,0]
+        y23 = self.nodes[1,1] - self.nodes[2,1]
+        y31 = self.nodes[2,1] - self.nodes[0,1]
+        y12 = self.nodes[0,1] - self.nodes[1,1]
+        x32 = self.nodes[2,0] - self.nodes[1,0]
+        x13 = self.nodes[0,0] - self.nodes[2,0]
+        x21 = self.nodes[1,0] - self.nodes[0,0]
 
         return np.array([[y23, 0, 0, y31, 0, 0, y12, 0, 0],
                          [0, x32, 0, 0, x13, 0, 0, x21, 0],
@@ -91,7 +91,7 @@ class GaussianQuadrature:
     def Integrate(cls, f, area):
         integral = 0.0
         for i in xrange(len(cls.XW)):
-            integral += f(cls.XW[i,0:3]) * cls.XW[i,3]
+            integral += f(cls.XW[i][0:3]) * cls.XW[i][3]
         return integral * (2.0*area)
 
 
@@ -151,7 +151,7 @@ class SparseInfo:
         """ M dot vec """
         res = np.zeros(len(self.indptr) - 1)
         for i in xrange(len(self.indptr) - 1):
-            region = self.indptr[i]:self.indptr[i+1]
+            region = np.arange(self.indptr[i], self.indptr[i+1])
             res[i] = np.dot(sparseM[region], vec[self.indices[region]])
 
         return res
@@ -184,9 +184,9 @@ class PhysicSolver:
 
         # Initialize the context.
         self.ddu = mesh.iniDDu # acceleration
-        self.du = mesh.iniDu # velocity
+        self.du = mesh.iniDu # velocity ---used by solid
         self.p = mesh.iniP # pressure
-        self.u = mesh.iniU # displacement
+        self.u = mesh.iniU # displacement ---used by solid
 
     def RefreshContext(self, physicSolver):
         pass
@@ -211,27 +211,44 @@ class SolidSolver(PhysicSolver):
         # Prepare the sparse info structure.
         self.sparseInfo = SparseInfo(mesh, SolidSolver.Dof)
 
-    def Solve(self, dt):
+    def Initialize(self, dt):
+        # Calculate acceleration in initial using the equilibrium.
+        RHS = self.f - self.LC*self.du - self.sparseInfo.MultiplyByVector(self.K, self.u)
+        LHS = self.LM
+        ddu = np.divide(RHS, LHS, out=np.zeros_like(RHS), where=LHS!=0)
+        # Calculate u_-1 = u_0 - dt*du_0 + 0.5*dt**2*ddu_0
+        self.up = self.u - dt*self.du + 0.5*(dt**2)*ddu
+
+    def Solve(self, t, dt):
         """ One time step solver. """
 
         # Assemble the mass, (damping,) stiffness matrix and force vector.
         self.Assemble()
         # Synchronize the common nodes values.
-        self.SyncCommNodes(self.LM, SolidSolver.Dof)
+        self.SyncCommNodes(self.LM)
         # self.SyncCommNodes(self.LC, SolidSolver.Dof)
+
+        # Prepare u and up to start time integration.
+        if t == 0.0:
+            self.Initialize(dt)
 
         # Calculate the displacement for next time step (n+1).
         LHS = self.LM + 0.5*dt*self.LC
         A1 = (dt**2) * self.f
         A2 = 2.0*self.LM * self.u - self.sparseInfo.MultiplyByVector((dt**2)*self.K, self.u)
         A3 = (0.5*dt*self.LC - self.LM) * self.up
-        RHS = A2 + A3 + A4
+        RHS = A1 + A2 + A3
         u = np.divide(RHS, LHS, out=np.zeros_like(RHS), where=LHS!=0)
         # Synchronize u.
         self.SyncCommNodes(u)
         self.ApplyBoundaryCondition(u)
 
-        # TODO:: Afterwards...
+        # Update the displacement solved.
+        self.up = self.u
+        self.u = u
+
+        # Post processing: calculate stress and save.
+        self.PostProcess()
 
     def Assemble(self):
         """ Now assume that:
@@ -261,7 +278,8 @@ class SolidSolver(PhysicSolver):
             # Calculate the RHS f.
             # TODO:: Add the body force and initial stress and strain conditions.
             # TODO:: Figure out what's the form of body force, traction and initial strain, eg. what's the right hand side.
-            localf = np.dot(triangular.N([1,1,1]/3.0), np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction) * elm.area
+            # TODO:: Form a official way to calculate the force item.
+            localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * elm.area / 3.0
             # Transform back to the glocal coordinates.
             bT = SolidSolver.BigTransformation(T)
             bTp = np.transpose(bT)
@@ -280,17 +298,21 @@ class SolidSolver(PhysicSolver):
         self.LM = self.sparseInfo.Lump(self.M)
         self.LC = np.zeros(len(self.sparseInfo.indptr) - 1) # TODO:: Add the C matrix.
 
-    def SyncCommNodes(self, quant, dof=SolidSolver.Dof, func=None):
+    def SyncCommNodes(self, quant, dof=None, func=None):
         """ Synchronize the quantity fo common nodes,
             here, quantity is vector-like.
         """
+        if dof is None:
+            dof = SolidSolver.Dof
+
         totalCommDofs = SparseInfo.GenerateDof(self.mesh.totalCommNodeIds, dof)
         commDofs = SparseInfo.GenerateDof(self.mesh.commNodeIds, dof)
         commQuant = quant[commDofs]
 
+        totalQuant = np.zeros(len(totalCommDofs))
         if self.rank == 0:
 
-            totalQuant = np.zeros(len(totalCommDofs))
+            # totalQuant = np.zeros(len(totalCommDofs))
             # Add on self's (root processor's) quantity.
             indices = np.where(np.isin(totalCommDofs, commDofs))[0]
             totalQuant[indices] += commQuant
@@ -318,10 +340,10 @@ class SolidSolver(PhysicSolver):
             self.comm.Send(commDofs, 0, TAG_COMM_DOF)
             self.comm.Send(commQuant, 0, TAG_COMM_DOF_VALUE)
 
-            totalQuant = None
+            # totalQuant = np.empty(len(totalCommDofs))
 
         # Get the collected total quantities by broadcast.
-        totalQuant = self.comm.Bcast(totalQuant, root=0)
+        self.comm.Bcast(totalQuant, root=0)
         # Update the original quantity.
         indices = np.where(np.isin(totalCommDofs, commDofs))[0]
         quant[commDofs] = totalQuant[indices]
@@ -330,6 +352,10 @@ class SolidSolver(PhysicSolver):
         bdyDofs = SparseInfo.GenerateDof(self.mesh.boundary, SolidSolver.Dof)
         quant[bdyDofs] = 0
 
+    def PostProcess(self):
+        # Update the coordinate.
+        # Calculate the stress with updated coordinates.
+        pass
 
     @staticmethod
     def CoordinateTransformation(nodes):
@@ -339,8 +365,8 @@ class SolidSolver(PhysicSolver):
 
         # Calculate the transform matrix.
         T = np.zeros([3, 3])
-        T[0] = normalize(edge0)
-        T[1] = normalize(edge1 - np.dot(edge1, T[0]) * T[0])
+        T[0] = SolidSolver.Normalize(edge0)
+        T[1] = SolidSolver.Normalize(edge1 - np.dot(edge1, T[0]) * T[0])
         T[2] = np.cross(T[0], T[1])
         return T
 
@@ -349,6 +375,10 @@ class SolidSolver(PhysicSolver):
         bT = np.zeros([9, 9])
         bT[0:3,0:3] = bT[3:6,3:6] = bT[6:9,6:9] = T
         return bT
+
+    @staticmethod
+    def Normalize(vec):
+        return vec / np.linalg.norm(vec)
 
 
 """ Generalized-a method
@@ -508,7 +538,7 @@ class TransientSolver(Solver):
             # Solve for the solid part based on
             # calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
-            self.solidSolver.Solve()
+            self.solidSolver.Solve(self.time, self.dt)
             # Refresh the fluid solver's context
             # before next loop start.
             self.fluidSolver.RefreshContext(self.solidSolver)

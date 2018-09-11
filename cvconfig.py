@@ -31,7 +31,7 @@ class FaceConfig(Config):
 
 class ConditionConfig:
 
-    def __init__(self, iniCndSection):
+    def __init__(self):
         pass
 
     def getProp(self, config, key):
