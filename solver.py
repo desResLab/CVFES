@@ -23,6 +23,9 @@ __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
 
 
+TAG_COMM_DOF = 211
+TAG_COMM_DOF_VALUE = 212
+
 """ Shape functions
 """
 class Shape:
@@ -88,8 +91,81 @@ class GaussianQuadrature:
     def Integrate(cls, f, area):
         integral = 0.0
         for i in xrange(len(cls.XW)):
-            integral += f(XW[i,0:3]) * XW[i,3]
+            integral += f(cls.XW[i,0:3]) * cls.XW[i,3]
         return integral * (2.0*area)
+
+
+""" Sparse matrix utilities.
+"""
+class SparseInfo:
+
+    def __init__(self, mesh, dof):
+        # Collecting sparse information.
+        sparseInfo = [[] for _ in xrange(mesh.nNodes)]
+        for iElm, elm in enumerate(mesh.elements):
+            for iNode in elm.nodes:
+                sparseInfo[iNode].extend(elm.nodes)
+        sparseInfo = np.array(sparseInfo)
+        for iNode in xrange(mesh.nNodes):
+            sparseInfo[iNode] = np.unique(sparseInfo[iNode])
+
+        # Generate sparse matrix.
+        indptr = [0] #1
+        indices = [] #2
+        for iNode in xrange(mesh.nNodes):
+            exNodes = SparseInfo.GenerateDof(sparseInfo[iNode], dof)
+            for i in xrange(dof): # for 3 by 3 block matrix (3 rows)
+                indices.extend(exNodes)
+                indptr.extend([len(indices)])
+
+        # Set self attributes.
+        self.indptr = np.array(indptr, dtype=int)
+        self.indices = np.array(indices, dtype=int)
+        self.length = len(self.indices) # Or self.indptr[-1]
+
+        # Remember the degree of freedom.
+        self.dof = dof
+
+    def Assemble(self, glbM, elmM, nodeIds, dofs=None):
+        if dofs is None:
+            dofs = sparseInfo.GenerateDof(nodeIds, self.dof)
+        # TODO:: Optimize here because dofs of same node share same indices
+        #        so don't need to find it everytime.
+        for i, row in enumerate(dofs):
+            dofIndices = self.Locate(row, dofs)
+            glbM[dofIndices] += elmM[i]
+
+    def Locate(self, row, col):
+        """ Return the location of elements in row, col
+            where col is array-like.
+        """
+        return self.indptr[row] + np.where(np.isin(self.indices[self.indptr[row]:self.indptr[row+1]], col))[0]
+
+    def Lump(self, M):
+        LM = np.zeros(len(self.indptr) - 1)
+        for i in xrange(len(self.indptr) - 1):
+            LM[i] = np.sum(M[self.indptr[i]:self.indptr[i+1]])
+        return LM
+
+    def MultiplyByVector(self, sparseM, vec):
+        """ M dot vec """
+        res = np.zeros(len(self.indptr) - 1)
+        for i in xrange(len(self.indptr) - 1):
+            region = self.indptr[i]:self.indptr[i+1]
+            res[i] = np.dot(sparseM[region], vec[self.indices[region]])
+
+        return res
+
+    @staticmethod
+    def GenerateDof(nodeIds, dof):
+        tDofs = dof * len(nodeIds)
+        indices = np.arange(0, tDofs, dof)
+
+        dofIndices = np.zeros(tDofs, dtype=np.int64)
+        for i in xrange(dof):
+            dofIndices[indices+i] = dof * nodeIds + i
+
+        return dofIndices
 
 
 """ Solid and Fluid Solvers.
@@ -97,7 +173,12 @@ class GaussianQuadrature:
 class PhysicSolver:
     """ One time step solver inside the time loop. """
 
-    def __init__(self, mesh, config):
+    def __init__(self, comm, mesh, config):
+
+        self.comm = comm
+        # For using convenient.
+        self.size = comm.Get_size()
+        self.rank = comm.Get_rank()
 
         self.mesh = mesh
 
@@ -116,25 +197,50 @@ class PhysicSolver:
 
 class FluidSolver(PhysicSolver):
 
-    def __init__(self, mesh, config):
-        PhysicSolver.__init__(self, mesh, config)
+    def __init__(self, comm, mesh, config):
+        PhysicSolver.__init__(self, comm, mesh, config)
 
 
 class SolidSolver(PhysicSolver):
 
-    def __init__(self, mesh, config):
-        PhysicSolver.__init__(self, mesh, config)
+    Dof = 3 # Degree of freedom per node, need to optimize afterwards.
 
-    def Solve(self):
-        pass
+    def __init__(self, comm, mesh, config):
+        PhysicSolver.__init__(self, comm, mesh, config)
 
-    def GenerateSparseInfo(self):
-        # TODO: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # Prepare the sparse info structure.
+        self.sparseInfo = SparseInfo(mesh, SolidSolver.Dof)
+
+    def Solve(self, dt):
+        """ One time step solver. """
+
+        # Assemble the mass, (damping,) stiffness matrix and force vector.
+        self.Assemble()
+        # Synchronize the common nodes values.
+        self.SyncCommNodes(self.LM, SolidSolver.Dof)
+        # self.SyncCommNodes(self.LC, SolidSolver.Dof)
+
+        # Calculate the displacement for next time step (n+1).
+        LHS = self.LM + 0.5*dt*self.LC
+        A1 = (dt**2) * self.f
+        A2 = 2.0*self.LM * self.u - self.sparseInfo.MultiplyByVector((dt**2)*self.K, self.u)
+        A3 = (0.5*dt*self.LC - self.LM) * self.up
+        RHS = A2 + A3 + A4
+        u = np.divide(RHS, LHS, out=np.zeros_like(RHS), where=LHS!=0)
+        # Synchronize u.
+        self.SyncCommNodes(u)
+        self.ApplyBoundaryCondition(u)
+
+        # TODO:: Afterwards...
 
     def Assemble(self):
         """ Now assume that:
             element type: triangular
         """
+        self.M = np.zeros(self.sparseInfo.length)
+        self.K = np.zeros(self.sparseInfo.length)
+        self.f = np.zeros(len(self.sparseInfo.indptr) - 1)
+
         # The elemental D matrix is static.
         tD = TriangularForSolid.D(self.mesh.E, self.mesh.v)
 
@@ -165,6 +271,65 @@ class SolidSolver(PhysicSolver):
             f = np.dot(bTp, localf)
 
             # Assemble!!!
+            dofs = SparseInfo.GenerateDof(elm.nodes, SolidSolver.Dof)
+            self.sparseInfo.Assemble(self.M, M, elm.nodes, dofs)
+            self.sparseInfo.Assemble(self.K, K, elm.nodes, dofs)
+            self.f[dofs] += f
+
+        # Lump matrix M and K.
+        self.LM = self.sparseInfo.Lump(self.M)
+        self.LC = np.zeros(len(self.sparseInfo.indptr) - 1) # TODO:: Add the C matrix.
+
+    def SyncCommNodes(self, quant, dof=SolidSolver.Dof, func=None):
+        """ Synchronize the quantity fo common nodes,
+            here, quantity is vector-like.
+        """
+        totalCommDofs = SparseInfo.GenerateDof(self.mesh.totalCommNodeIds, dof)
+        commDofs = SparseInfo.GenerateDof(self.mesh.commNodeIds, dof)
+        commQuant = quant[commDofs]
+
+        if self.rank == 0:
+
+            totalQuant = np.zeros(len(totalCommDofs))
+            # Add on self's (root processor's) quantity.
+            indices = np.where(np.isin(totalCommDofs, commDofs))[0]
+            totalQuant[indices] += commQuant
+
+            quantIdBuf = np.zeros(len(totalCommDofs), dtype=np.int64)
+            quantBuf = np.zeros(len(totalCommDofs))
+            recvInfo = MPI.Status()
+            for i in xrange(1, self.size):
+                self.comm.Recv(quantIdBuf, MPI.ANY_SOURCE, TAG_COMM_DOF, recvInfo)
+                recvLen = recvInfo.Get_count(MPI.INT64_T)
+                recvSource = recvInfo.Get_source()
+                # Receive the quantity.
+                self.comm.Recv(quantBuf, recvSource, TAG_COMM_DOF_VALUE, recvInfo)
+                # TODO:: make sure the quant received length is consistent with quantIds'.
+
+                # Add the quantity received to the totalQuant.
+                indices = np.where(np.isin(totalCommDofs, quantIdBuf[:recvLen]))[0]
+                totalQuant[indices] += quantBuf[:recvLen]
+
+            if func is not None:
+                func(totalQuant)
+
+        else:
+
+            self.comm.Send(commDofs, 0, TAG_COMM_DOF)
+            self.comm.Send(commQuant, 0, TAG_COMM_DOF_VALUE)
+
+            totalQuant = None
+
+        # Get the collected total quantities by broadcast.
+        totalQuant = self.comm.Bcast(totalQuant, root=0)
+        # Update the original quantity.
+        indices = np.where(np.isin(totalCommDofs, commDofs))[0]
+        quant[commDofs] = totalQuant[indices]
+
+    def ApplyBoundaryCondition(self, quant): # TODO:: Change to according to configuration.
+        bdyDofs = SparseInfo.GenerateDof(self.mesh.boundary, SolidSolver.Dof)
+        quant[bdyDofs] = 0
+
 
     @staticmethod
     def CoordinateTransformation(nodes):
@@ -190,8 +355,8 @@ class SolidSolver(PhysicSolver):
 """
 class GeneralizedAlphaSolver(PhysicSolver):
 
-    def __init__(self, mesh, config):
-        PhysicSolver.__init__(self, mesh, config)
+    def __init__(self, comm, mesh, config):
+        PhysicSolver.__init__(self, comm, mesh, config)
 
         # Calculate the prameters gonna used
         self.rho_infinity = config.rho_infinity
@@ -241,8 +406,8 @@ class GeneralizedAlphaSolver(PhysicSolver):
 
 class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
-    def __init__(self, mesh, config):
-        GeneralizedAlphaSolver.__init__(self, mesh, config)
+    def __init__(self, comm, mesh, config):
+        GeneralizedAlphaSolver.__init__(self, comm, mesh, config)
 
     def RefreshContext(self, physicSolver):
         self.du = physicSolver.du
@@ -275,8 +440,8 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
 class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
 
-    def __init__(self, mesh, config):
-        GeneralizedAlphaSolver.__init__(self, mesh, config)
+    def __init__(self, comm, mesh, config):
+        GeneralizedAlphaSolver.__init__(self, comm, mesh, config)
 
         self.beta = 0.25 * (1 + self.alpha_f - self.alpha_m)**2
 
@@ -302,7 +467,8 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
 """
 class Solver:
 
-    def __init__(self, mesh, config): # the config is actually solver config
+    def __init__(self, comm, mesh, config): # the config is actually solver config
+        self.comm = comm
         self.mesh = mesh
 
     def Solve(self):
@@ -312,8 +478,8 @@ class Solver:
 class TransientSolver(Solver):
     """ Solver employing time looping style, where inertial is not trivial."""
 
-    def __init__(self, mesh, config):
-        Solver.__init__(self, mesh, config)
+    def __init__(self, comm, mesh, config):
+        Solver.__init__(self, comm, mesh, config)
 
         # Set the current time which also the time to start,
         # it might not be 0 in which case solving starts from
@@ -326,13 +492,13 @@ class TransientSolver(Solver):
         self.tolerance = config.tolerance
 
         # Init the solver which is inside of the time loop.
-        self.__initPhysicSolver__(mesh, config)
+        self.__initPhysicSolver__(comm, mesh, config)
 
-    def __initPhysicSolver__(self, mesh, config):
+    def __initPhysicSolver__(self, comm, mesh, config):
         """ Initialize the fluid and solid solver. """
 
-        self.fluidSolver = FluidSolver(mesh, config)
-        self.solidSolver = SolidSolver(mesh, config)
+        self.fluidSolver = FluidSolver(comm, mesh, config)
+        self.solidSolver = SolidSolver(comm, mesh, config)
 
     def Solve(self):
 
@@ -347,6 +513,8 @@ class TransientSolver(Solver):
             # before next loop start.
             self.fluidSolver.RefreshContext(self.solidSolver)
 
+            self.time += self.dt
+
 
 """ For generalized-a method:
 """
@@ -355,10 +523,10 @@ class TransientGeneralizedASolver(TransientSolver):
         generalized-a time integration algorithm.
     """
 
-    def __init__(self, mesh, config):
-        TransientSolver.__init__(self, mesh, config)
+    def __init__(self, comm, mesh, config):
+        TransientSolver.__init__(self, comm, mesh, config)
 
-    def __initPhysicSolver__(self, mesh, config):
-        self.fluidSolver = GeneralizedAlphaFluidSolver(mesh, config)
-        self.solidSolver = GeneralizedAlphaSolidSolver(mesh, config)
+    def __initPhysicSolver__(self, comm, mesh, config):
+        self.fluidSolver = GeneralizedAlphaFluidSolver(comm, mesh, config)
+        self.solidSolver = GeneralizedAlphaSolidSolver(comm, mesh, config)
 

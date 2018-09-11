@@ -238,7 +238,9 @@ class CVFES:
 
         # Recognize the common nodes I contain.
         # mesh.commNodeIds = np.array(list(set(commonNodes).intersection(myNodes)))
+        mesh.totalCommNodeIds = commonNodes
         mesh.commNodeIds = np.intersect1d(commonNodes, myNodes)
+
 
         # TODO:: Try to read the existing calculated results from local files, if exists start from there,
         #        if not start from initial conditions.

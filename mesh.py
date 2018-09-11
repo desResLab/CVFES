@@ -26,7 +26,7 @@ class Element:
         for ipt in xrange(self.nNodes):
             self.nodes[ipt] = vtkCell.GetPointId(ipt)
 
-        self.area = vtkCell.ComputeArea()
+        self.area = vtkCell.ComputeArea() # Need to change, because element can update the displacement!
 
         # TODO::Add edges info if needed later.
 
@@ -49,6 +49,7 @@ class Mesh:
         vtkNodes = polyDataModel.GetPoints().GetData()
         self.nodes = vtk_to_numpy(vtkNodes) # _nodes
         self.commNodeIds = None # common nodes processor contains
+        self.totalCommNodeIds = None
 
         # Set the element groups.
         # Will be updated to sub-group after partition.
@@ -68,6 +69,9 @@ class Mesh:
 
         # Set the total number of degree of freedoms.
         self.ndof = 3 * self.nNodes
+
+        # Set the boundary.
+        self.setBoundary()
 
         # Set the initial conditions.
         # TODO:: might need to reconsider how to organize the structure of configuration,
@@ -113,5 +117,11 @@ class Mesh:
             prop = value
 
         return prop
+
+    def setBoundary(self): # TODO:: The way to decide where is boundary.
+        tol = 1.0
+
+        Z = self.nodes[:, 2]
+        self.boundary = np.where((abs(Z-np.amax(Z))<tol) | (abs(Z-np.amin(Z))<tol))[0]
 
 
