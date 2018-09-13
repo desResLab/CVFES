@@ -90,6 +90,9 @@ class MeshConfig(Config):
         # DEBUG:
         # print 'Mesh {} contains {} faces in domain {}\n'.format(self.name, len(self.faces), self.domainId)
 
+        # Config the result filename.
+        self.stressFilename = meshSection['stress_filename']
+
 
 class SolverConfig():
 

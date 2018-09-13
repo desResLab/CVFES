@@ -25,6 +25,8 @@ __copyright__ = "Copyright 2018, the CVFES project"
 
 TAG_COMM_DOF = 211
 TAG_COMM_DOF_VALUE = 212
+# TAG_ELM_ID = 221
+TAG_STRESSES = 222
 
 """ Shape functions
 """
@@ -254,7 +256,7 @@ class SolidSolver(PhysicSolver):
         self.u = u
 
         # Post processing: calculate stress and save.
-        self.PostProcess()
+        self.PostProcess(t, True)
 
     def Assemble(self):
         """ Now assume that:
@@ -358,7 +360,10 @@ class SolidSolver(PhysicSolver):
         bdyDofs = SparseInfo.GenerateDof(self.mesh.boundary, SolidSolver.Dof)
         quant[bdyDofs] = 0
 
-    def PostProcess(self):
+    def PostProcess(self, t, saveStress=False):
+        # Array containing the stress result for each element.
+        # TODO:: Change 5 here according to specific situation.
+        self.stress = np.empty((self.mesh.nElements, 5))
         # Update the coordinate.
         self.mesh.UpdateCoordinates(self.u)
         # Calculate the stress with updated coordinates.
@@ -368,16 +373,54 @@ class SolidSolver(PhysicSolver):
             nodes = self.mesh.nodes[elm.nodes]
             # Transform the global coordinates into local plain one.
             T = SolidSolver.CoordinateTransformation(nodes)
-            # Transform.
+            bT = SolidSolver.BigTransformation(T)
+            # Transform to local coordinates which element is in x-y plane..
             nodes = np.dot(nodes, np.transpose(T))
             # Calculate local mass and stiffness matrix.
             triangular = TriangularForSolid(nodes)
             # Compute the stress = D.B.u
             localDofs = SparseInfo.GenerateDof(elm.nodes, SolidSolver.Dof)
-            localStress = np.dot(np.dot(tD, triangular.B()), self.u[localDofs])
+            localU = np.dot(bT, self.u[localDofs])
+            localStress = np.dot(np.dot(tD, triangular.B()), localU)
 
-            # TODO:: ???????????????????????????????????????
+            # Transform the stress tensor back to global coordinates
+            stressTensor = np.array([[localStress[0], localStress[2], localStress[3]],
+                                     [localStress[2], localStress[1], localStress[4]],
+                                     [localStress[3], localStress[4],       0       ]])
+            glbStressTensor = np.dot(np.dot(np.transpose(T), stressTensor), T)
+            self.stress[iElm, :] = np.array([glbStressTensor[0,0], # xx
+                                             glbStressTensor[1,1], # yy
+                                             glbStressTensor[0,1], # xy
+                                             glbStressTensor[0,2], # xz
+                                             glbStressTensor[1,2]])# yz
 
+        # Collect the stress results from all processors to prepare for writing to file.
+        self.UnionStress()
+
+        if self.rank == 0 and saveStress:
+            self.mesh.SaveStress(self.glbStresses, t, np.array(['xx', 'yy', 'xy', 'xz', 'yz']))
+
+    def UnionStress(self):
+
+        if self.rank == 0:
+
+            self.glbStresses = np.zeros((self.mesh.gnElements, 5))
+            self.glbStresses[self.mesh.partition==0, :] = self.stress
+
+            bufSize = int(self.mesh.gnElements / self.size * 1.2)
+            stressesBuf = np.empty(bufSize*5)
+
+            recvInfo = MPI.Status()
+            for i in xrange(1, self.size):
+                # Receive the stresses from each processor.
+                self.comm.Recv(stressesBuf, MPI.ANY_SOURCE, TAG_STRESSES, recvInfo)
+                recvLen = recvInfo.Get_count(MPI.INT64_T)
+                p = recvInfo.Get_source()
+                # Assign.
+                self.glbStresses[self.mesh.partition==p, :] = stressesBuf[:recvLen].reshape(recvLen/5, 5)
+        else:
+
+            self.comm.Send(self.stress.ravel(), 0, TAG_STRESSES)
 
     @staticmethod
     def CoordinateTransformation(nodes):

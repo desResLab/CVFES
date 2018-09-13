@@ -8,6 +8,7 @@
 """
 from cvconfig import CVConfig
 import numpy as np
+from os.path import splitext
 
 from vtk.util.numpy_support import vtk_to_numpy
 from vtk.util.numpy_support import numpy_to_vtk
@@ -42,23 +43,24 @@ class Mesh:
         reader.SetFileName(meshConfig.file_path)
         reader.Update()
 
-        polyDataModel = reader.GetOutput()
+        self.polyDataModel = reader.GetOutput()
 
         # Set the nodes and coordinates.
-        self.nNodes = polyDataModel.GetNumberOfPoints() # _nNodes
-        vtkNodes = polyDataModel.GetPoints().GetData()
+        self.nNodes = self.polyDataModel.GetNumberOfPoints() # _nNodes
+        vtkNodes = self.polyDataModel.GetPoints().GetData()
         self.nodes = vtk_to_numpy(vtkNodes) # _nodes
         self.commNodeIds = None # common nodes processor contains
         self.totalCommNodeIds = None
 
         # Set the element groups.
         # Will be updated to sub-group after partition.
-        self.nElements = polyDataModel.GetNumberOfCells()
-        self.elements = np.array([Element(polyDataModel.GetCell(i)) for i in xrange(self.nElements)])
+        self.nElements = self.polyDataModel.GetNumberOfCells()
+        self.elements = np.array([Element(self.polyDataModel.GetCell(i)) for i in xrange(self.nElements)])
         self.elememtsMap = None
 
         # Set total number of elements in the mesh.
         self.gnElements = self.nElements
+        self.partition = None # The whole partition result, only used by root.
 
         # Set the domain id.
         self.domainId = meshConfig.domainId
@@ -78,6 +80,9 @@ class Mesh:
         #        maybe open the initial condition file only once is enough.
         self.setInitialConditions(meshConfig.initialConditions)
         self.setBoundaryCondtions(meshConfig.boundaryConditions)
+
+        # Set the result filename.
+        self.stressFilename = meshConfig.stressFilename
 
     def setInitialConditions(self, iniCondConfig):
         # Set the acceleration
@@ -126,5 +131,25 @@ class Mesh:
 
     def UpdateCoordinates(self, u):
         self.nodes += np.reshape(u, (self.nNodes, 3))
+
+    def SaveStress(self, stress, t, dim):
+        """ Save the stress result of elements at time t with stress tensor of dim.
+            Dim is an array like ['xx', 'yy', 'xy', 'xz', 'yz']
+        """
+        for i, name in enumerate(dim):
+            stressVec = numpy_to_vtk(stress[:,i])
+            stressVec.SetName(name)
+            self.polyDataModel.GetCellData().AddArray(stressVec)
+
+        filename, fileExtension = splitext(self.stressFilename)
+        stressFilename = '{}{}{}'.format(filename, t, fileExtension)
+
+        writer = vtk.vtkXMLPolyDataWriter() if fileExtension.endswith('vtp') else vtk.vtkUnstructuredGridWriter()
+        writer.SetInputData(self.polyDataModel)
+        writer.SetFileName(stressFilename)
+        writer.Write()
+
+    def Save(self, quant):
+        pass
 
 

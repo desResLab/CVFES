@@ -89,117 +89,82 @@ class CVFES:
         # DEBUG:
         # print('rank {} has part result {}\n'.format(self.rank, part))
 
-        # Distribute elements to their corresponding processor according to the partition result, e.g. part.
-        # Processor collects its own elements first and then send out the others to the root.
-        myElms = np.empty(itail-ihead, dtype=np.int64)
-        myCounter = 0
-
-        partids = np.arange(ihead, itail, dtype=np.int64)
-        partflags = np.ones(len(part), dtype=bool)
-        for i in xrange(len(part)):
-            if part[i] == self.rank:
-                partflags[i] = False
-
-                myElms[myCounter] = partids[i]
-                myCounter += 1
-                # If the pre-allocated memory is not enough, extend it.
-                if myCounter >= len(myElms):
-                    myElms = np.append(myElms, np.empty(100, dtype=np.int64)) # TODO:: Maybe the 100 can be adjusted.
-                    print('rank {} myElms has been extended.\n'.format(self.rank))
-
-        # DEBUG: print out how many elements has been first collected.
-        procnum = self.comm.allreduce(myCounter)
-        if self.rank == 0:
-            print('num of processed elms {} percentage {}\n'.format(procnum, float(procnum)/mesh.nElements))
-
-        # Processor collects elements not belong to it and send them to root,
+        # Processor send the partition result to root,
         # then receive the elements belong to it from root.
-        # Root proc receives all 'other' elements from each processor
+        # Root proc receives all elements from each processor
         # and redistribute them according to the partitioning result.
+        partids = np.arange(ihead, itail, dtype=np.int64)
+        # Elements current processor owns.
+        myElmsSize = int(mesh.nElements / self.size * 1.2)
+        myElms = np.empty(myElmsSize, dtype=np.int64)
+
         if self.rank == 0:
+            # Remember the whole partition result.
+            mesh.partition = np.empty(mesh.nElements, dtype=np.int64)
+
             # Allocate the memory to store the unprocessed elms.
             recvElmsBuf = np.empty(mesh.nElements, dtype=np.int64)
             recvElmIdsBuf = np.empty(mesh.nElements, dtype=np.int64)
             recvElmsCounter = 0
 
-            # Copy the root's unprocessed elms into mem first.
-            othLen = np.sum(partflags)
-            recvElmsBuf[:othLen] = part[partflags]
-            recvElmIdsBuf[:othLen] = partids[partflags]
-            recvElmsCounter += othLen
+            # Copy the root's partition result into mem first.
+            partLength = len(part)
+            recvElmsBuf[:partLength] = part
+            recvElmIdsBuf[:partLength] = partids
+            recvElmsCounter += partLength
 
             # Receive all 'other' elements from each processor.
-            recvElmsInfo = MPI.Status()
+            recvInfo = MPI.Status()
             for i in xrange(self.size-1):
-                recvLen = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_ELM_NUM, status=recvElmsInfo)
-                recvSource = recvElmsInfo.Get_source()
-                if recvLen > 0:
-                    self.comm.Recv(recvElmsBuf[recvElmsCounter:], recvSource, TAG_ELM, recvElmsInfo)
-                    self.comm.Recv(recvElmIdsBuf[recvElmsCounter:], recvSource, TAG_ELMID, recvElmsInfo)
-                    recvElmsCounter += recvLen
+                self.comm.Recv(recvElmsBuf[recvElmsCounter:], MPI.ANY_SOURCE, TAG_ELM, recvInfo)
+                recvLen = recvInfo.Get_count(MPI.INT64_T)
+                recvSource = recvInfo.Get_source()
+
+                self.comm.Recv(recvElmIdsBuf[recvElmsCounter:], recvSource, TAG_ELMID, recvInfo)
+                recvElmsCounter += recvLen
 
             print('root node collect {} elms, percentage {}.\n'.format(recvElmsCounter, float(recvElmsCounter)/mesh.nElements))
 
             # Root starts to process the collected data and split it to corresponding process.
-            selms = recvElmsBuf[:recvElmsCounter] # s for second
-            selmids = recvElmIdsBuf[:recvElmsCounter]
-
             # For root node, pick up directly.
-            secElmsFlag = (selms == 0)
-            secElmsCounter = np.sum(secElmsFlag)
+            elmsFlag = (recvElmsBuf == 0)
+            elmsCounter = np.sum(elmsFlag)
 
-            if myCounter+secElmsCounter > len(myElms):
-                addonSize = myCounter+secElmsCounter-len(myElms)
+            if elmsCounter > myElmsSize:
+                addonSize = elmsCounter - myElmsSize
                 myElms = np.append(myElms, np.empty(addonSize, dtype=np.int64))
                 print('rank {} myElms has been extended.\n'.format(self.rank))
 
-            myElms[myCounter:myCounter+secElmsCounter] = selmids[secElmsFlag]
-            myCounter += secElmsCounter
+            myElms[:elmsCounter] = recvElmIdsBuf[elmsFlag] # This is what will be used finilly!
+            # Remember the partition result.
+            mesh.partition[recvElmIdsBuf[elmsFlag]] = 0
 
             for i in xrange(1, self.size):
                 # Find the corresponding range of elms.
-                secElmsFlag = (selms == i)
-                secElmsCounter = np.sum(secElmsFlag)
+                pelmsFlag = (recvElmsBuf == i)
 
                 # Start to send the elms to corresponding process.
-                self.comm.send(secElmsCounter, dest=i, tag=TAG_ELM_NUM)
-                if secElmsCounter > 0:
-                    self.comm.Send(selmids[secElmsFlag], dest=i, tag=TAG_ELMID)
+                self.comm.Send(recvElmIdsBuf[pelmsFlag], dest=i, tag=TAG_ELMID)
+                # Remeber the partition result.
+                mesh.partition[recvElmIdsBuf[pelmsFlag]] = i
         else:
             # Other procs send the 'other' elements to root
             # and receive the ones belonging to itself from the root.
-            othLen = np.sum(partflags)
-            self.comm.send(othLen, dest=0, tag=TAG_ELM_NUM)
-            if othLen > 0:
-                self.comm.Send(part[partflags], dest=0, tag=TAG_ELM)
-                self.comm.Send(partids[partflags], dest=0, tag=TAG_ELMID)
+            self.comm.Send(part, dest=0, tag=TAG_ELM)
+            self.comm.Send(partids, dest=0, tag=TAG_ELMID)
 
             # Receive the second part the elms that belong to the processor.
-            secElmsCounter = self.comm.recv(source=0, tag=TAG_ELM_NUM)
-            if secElmsCounter > 0:
-                # Check if memory is enough first.
-                if myCounter+secElmsCounter > len(myElms):
-                    addonsize = myCounter+secElmsCounter-len(myElms)
-                    myElms = np.append(myElms, np.empty(addonsize, dtype=np.int64))
-                    print('rank {} myElms has been extended.\n'.format(self.rank))
-
-                self.comm.Recv(myElms[myCounter:], 0, TAG_ELMID)
-                myCounter += secElmsCounter
+            recvInfo = MPI.Status()
+            self.comm.Recv(myElms, 0, TAG_ELMID, recvInfo)
+            elmsCounter = recvInfo.Get_count(MPI.INT64_T)
 
         self.comm.Barrier()
 
-        # DEBUG: print out if all elements has been ditributed.
-        totalSecNum = self.comm.allreduce(secElmsCounter)
-        totalNum = self.comm.allreduce(myCounter)
-
-        if self.rank == 0:
-            print('{} non-processed, second part precentage {}.\n'.format(mesh.nElements-totalNum, float(totalSecNum)/mesh.nElements))
-
-        myElms = myElms[:myCounter]
+        myElms = myElms[:elmsCounter]
 
         # Update the mesh into sub-mesh in each processor,
         # notice that the [mesh] var acctually points to mesh in self.meshes.
-        mesh.nElements = myCounter
+        mesh.nElements = elmsCounter
         mesh.elements = mesh.elements[myElms]
         mesh.elementsMap = myElms
 
