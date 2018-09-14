@@ -124,7 +124,7 @@ class Mesh:
         return prop
 
     def setBoundary(self): # TODO:: The way to decide where is boundary.
-        tol = 1.0
+        tol = 0.01
 
         Z = self.nodes[:, 2]
         self.boundary = np.where((abs(Z-np.amax(Z))<tol) | (abs(Z-np.amin(Z))<tol))[0]
@@ -132,7 +132,7 @@ class Mesh:
     def UpdateCoordinates(self, u):
         self.nodes += np.reshape(u, (self.nNodes, 3))
 
-    def SaveStress(self, stress, t, dim):
+    def Save(self, t, dim, stress, u=None):
         """ Save the stress result of elements at time t with stress tensor of dim.
             Dim is an array like ['xx', 'yy', 'xy', 'xz', 'yz']
         """
@@ -141,6 +141,11 @@ class Mesh:
             stressVec.SetName(name)
             self.polyDataModel.GetCellData().AddArray(stressVec)
 
+        if u is not None:
+            uTuples = numpy_to_vtk(u)
+            uTuples.SetName('displacement')
+            self.polyDataModel.GetPointData().AddArray(uTuples)
+
         filename, fileExtension = splitext(self.stressFilename)
         stressFilename = '{}{}{}'.format(filename, t, fileExtension)
 
@@ -148,8 +153,5 @@ class Mesh:
         writer.SetInputData(self.polyDataModel)
         writer.SetFileName(stressFilename)
         writer.Write()
-
-    def Save(self, quant):
-        pass
 
 

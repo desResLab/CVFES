@@ -18,6 +18,7 @@ from cvconfig import CVConfig
 from mpi4py import MPI
 from mesh import *
 from math import floor
+from math import cos, pi
 
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
@@ -27,6 +28,8 @@ TAG_COMM_DOF = 211
 TAG_COMM_DOF_VALUE = 212
 # TAG_ELM_ID = 221
 TAG_STRESSES = 222
+TAG_DISPLACEMENT = 223
+# TAG_UNION = 224
 
 """ Shape functions
 """
@@ -231,7 +234,7 @@ class SolidSolver(PhysicSolver):
         """ One time step solver. """
 
         # Assemble the mass, (damping,) stiffness matrix and force vector.
-        self.Assemble()
+        self.Assemble(t)
         # Synchronize the common nodes values.
         self.SyncCommNodes(self.LM)
         # self.SyncCommNodes(self.LC, SolidSolver.Dof)
@@ -256,9 +259,9 @@ class SolidSolver(PhysicSolver):
         self.u = u
 
         # Post processing: calculate stress and save.
-        self.PostProcess(t, True)
+        self.PostProcess(t+dt, True)
 
-    def Assemble(self):
+    def Assemble(self, t):
         """ Now assume that:
             element type: triangular
         """
@@ -287,6 +290,8 @@ class SolidSolver(PhysicSolver):
             # TODO:: Add the body force and initial stress and strain conditions.
             # TODO:: Figure out what's the form of body force, traction and initial strain, eg. what's the right hand side.
             # TODO:: Form a official way to calculate the force item.
+            # localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * triangular.area / 3.0
+            tempTraction = 1 - cos(2.5*pi*t) # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * triangular.area / 3.0
             # Transform back to the glocal coordinates.
             bT = SolidSolver.BigTransformation(T)
@@ -360,7 +365,7 @@ class SolidSolver(PhysicSolver):
         bdyDofs = SparseInfo.GenerateDof(self.mesh.boundary, SolidSolver.Dof)
         quant[bdyDofs] = 0
 
-    def PostProcess(self, t, saveStress=False):
+    def PostProcess(self, t, save=False):
         # Array containing the stress result for each element.
         # TODO:: Change 5 here according to specific situation.
         self.stress = np.empty((self.mesh.nElements, 5))
@@ -396,9 +401,11 @@ class SolidSolver(PhysicSolver):
 
         # Collect the stress results from all processors to prepare for writing to file.
         self.UnionStress()
+        self.UnionDisplacement()
 
-        if self.rank == 0 and saveStress:
-            self.mesh.SaveStress(self.glbStresses, t, np.array(['xx', 'yy', 'xy', 'xz', 'yz']))
+        if self.rank == 0 and save:
+            self.mesh.Save(t, np.array(['xx', 'yy', 'xy', 'xz', 'yz']), self.glbStresses,
+                           self.glbU.reshape(self.mesh.nNodes, SolidSolver.Dof))
 
     def UnionStress(self):
 
@@ -421,6 +428,48 @@ class SolidSolver(PhysicSolver):
         else:
 
             self.comm.Send(self.stress.ravel(), 0, TAG_STRESSES)
+
+    def UnionDisplacement(self):
+
+        if self.rank == 0:
+
+            self.glbU = np.zeros(self.mesh.nNodes * SolidSolver.Dof)
+            self.glbU += self.u
+
+            uBuf = np.empty(self.mesh.nNodes * SolidSolver.Dof)
+            for i in xrange(1, self.size):
+                self.comm.Recv(uBuf, MPI.ANY_SOURCE, TAG_DISPLACEMENT)
+                # Flag the nodes uBuf acctually contains.
+                self.glbU[uBuf!=0] = uBuf[uBuf!=0]
+
+        else:
+            self.comm.Send(self.u, 0, TAG_DISPLACEMENT)
+
+    # def Union(self, quant, glbLength, dof):
+
+    #     glbQuant = None
+
+    #     if self.rank == 0:
+
+    #         glbQuant = np.zeros((glbLength, dof))
+    #         glbQuant[self.mesh.partition==0, :] = quant
+
+    #         quantBuf = np.empty(glbLength * dof)
+
+    #         recvInfo = MPI.Status()
+    #         for i in xrange(1, self.size):
+    #             # Receive the stresses from each processor.
+    #             self.comm.Recv(quantBuf, MPI.ANY_SOURCE, TAG_UNION, recvInfo)
+    #             recvLen = recvInfo.Get_count(MPI.LONG_DOUBLE)
+    #             p = recvInfo.Get_source()
+    #             # Assign.
+    #             glbQuant[self.mesh.partition==p, :] = quantBuf[:recvLen].reshape(recvLen/dof, dof)
+
+    #     else:
+    #         self.comm.Send(quant.ravel(), 0, TAG_UNION)
+
+    #     return glbQuant
+
 
     @staticmethod
     def CoordinateTransformation(nodes):
