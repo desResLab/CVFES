@@ -142,15 +142,19 @@ class SparseInfo:
             dofs = sparseInfo.GenerateDof(nodeIds, self.dof)
         # TODO:: Optimize here because dofs of same node share same indices
         #        so don't need to find it everytime.
+        # for i, row in enumerate(dofs):
+        #     dofIndices = self.Locate(row, dofs)
+        #     glbM[dofIndices] += elmM[i]
         for i, row in enumerate(dofs):
-            dofIndices = self.Locate(row, dofs)
-            glbM[dofIndices] += elmM[i]
+            for j, col in enumerate(dofs):
+                ind = self.indptr[row] + np.where(self.indices[self.indptr[row]:self.indptr[row+1]] == col)[0]
+                glbM[ind] += elmM[i,j]
 
-    def Locate(self, row, col):
-        """ Return the location of elements in row, col
-            where col is array-like.
-        """
-        return self.indptr[row] + np.where(np.isin(self.indices[self.indptr[row]:self.indptr[row+1]], col))[0]
+    # def Locate(self, row, col):
+    #     """ Return the location of elements in row, col
+    #         where col is array-like.
+    #     """
+    #     return self.indptr[row] + np.where(np.isin(self.indices[self.indptr[row]:self.indptr[row+1]], col))[0]
 
     def Lump(self, M):
         LM = np.zeros(len(self.indptr) - 1)
@@ -237,6 +241,7 @@ class SolidSolver(PhysicSolver):
         self.Assemble(t)
         # Synchronize the common nodes values.
         self.SyncCommNodes(self.LM)
+
         # self.SyncCommNodes(self.LC, SolidSolver.Dof)
 
         # Prepare u and up to start time integration.
@@ -259,7 +264,9 @@ class SolidSolver(PhysicSolver):
         self.u = u
 
         # Post processing: calculate stress and save.
-        self.PostProcess(t+dt, True)
+        self.PostProcess(t+dt)
+        # Barrier everyone!
+        self.comm.Barrier()
 
     def Assemble(self, t):
         """ Now assume that:
@@ -267,7 +274,7 @@ class SolidSolver(PhysicSolver):
         """
         self.M = np.zeros(self.sparseInfo.length)
         self.K = np.zeros(self.sparseInfo.length)
-        self.f = np.zeros(len(self.sparseInfo.indptr) - 1)
+        self.f = np.zeros(len(self.sparseInfo.indptr) - 1) # nNodes*dof
 
         # The elemental D matrix is static.
         tD = TriangularForSolid.D(self.mesh.E, self.mesh.v)
@@ -284,15 +291,15 @@ class SolidSolver(PhysicSolver):
             triangular = TriangularForSolid(nodes)
             localM = GaussianQuadrature.Integrate(
                             lambda xi: np.dot(np.transpose(triangular.N(xi)),triangular.N(xi)),
-                            triangular.area) * self.mesh.density
-            localK = np.dot(np.dot(np.transpose(triangular.B()), tD), triangular.B()) * triangular.area
+                            triangular.area) * self.mesh.density * self.mesh.thickness
+            localK = np.dot(np.dot(np.transpose(triangular.B()), tD), triangular.B()) * triangular.area * self.mesh.thickness
             # Calculate the RHS f.
             # TODO:: Add the body force and initial stress and strain conditions.
             # TODO:: Figure out what's the form of body force, traction and initial strain, eg. what's the right hand side.
             # TODO:: Form a official way to calculate the force item.
             # localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * triangular.area / 3.0
-            tempTraction = 1 - cos(2.5*pi*t) # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * triangular.area / 3.0
+            tempTraction = 0.5 - 0.5 * cos(pi*t) # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            localf = np.array([0,0,1,0,0,1,0,0,1])*tempTraction * triangular.area / 3.0
             # Transform back to the glocal coordinates.
             bT = SolidSolver.BigTransformation(T)
             bTp = np.transpose(bT)
@@ -366,11 +373,13 @@ class SolidSolver(PhysicSolver):
         quant[bdyDofs] = 0
 
     def PostProcess(self, t, save=False):
+        # Update the coordinate first.
+        self.UnionDisplacement()
+        self.mesh.UpdateCoordinates(self.u) # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
         # Array containing the stress result for each element.
         # TODO:: Change 5 here according to specific situation.
         self.stress = np.empty((self.mesh.nElements, 5))
-        # Update the coordinate.
-        self.mesh.UpdateCoordinates(self.u)
         # Calculate the stress with updated coordinates.
         tD = TriangularForSolid.D(self.mesh.E, self.mesh.v)
         for iElm, elm in enumerate(self.mesh.elements):
@@ -401,11 +410,10 @@ class SolidSolver(PhysicSolver):
 
         # Collect the stress results from all processors to prepare for writing to file.
         self.UnionStress()
-        self.UnionDisplacement()
 
         if self.rank == 0 and save:
             self.mesh.Save(t, np.array(['xx', 'yy', 'xy', 'xz', 'yz']), self.glbStresses,
-                           self.glbU.reshape(self.mesh.nNodes, SolidSolver.Dof))
+                           self.u.reshape(self.mesh.nNodes, SolidSolver.Dof))
 
     def UnionStress(self):
 
@@ -433,14 +441,15 @@ class SolidSolver(PhysicSolver):
 
         if self.rank == 0:
 
-            self.glbU = np.zeros(self.mesh.nNodes * SolidSolver.Dof)
-            self.glbU += self.u
+            # self.glbU = np.zeros(self.mesh.nNodes * SolidSolver.Dof)
+            # self.glbU += self.u
 
             uBuf = np.empty(self.mesh.nNodes * SolidSolver.Dof)
             for i in xrange(1, self.size):
                 self.comm.Recv(uBuf, MPI.ANY_SOURCE, TAG_DISPLACEMENT)
                 # Flag the nodes uBuf acctually contains.
-                self.glbU[uBuf!=0] = uBuf[uBuf!=0]
+                self.u[uBuf!=0] = uBuf[uBuf!=0]
+            print(self.u[:20])
 
         else:
             self.comm.Send(self.u, 0, TAG_DISPLACEMENT)
@@ -646,7 +655,7 @@ class TransientSolver(Solver):
 
     def Solve(self):
 
-        while self.time < self.endtime:
+        while self.time <= self.endtime:
             # Solve for the fluid part.
             self.fluidSolver.Solve()
             # Solve for the solid part based on

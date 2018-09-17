@@ -73,6 +73,7 @@ class MeshConfig(Config):
     def __init__(self, meshSection):
         Config.__init__(self, meshSection)
         self.domainId = meshSection.as_int('domain_id')
+        self.thickness = meshSection.as_float('thickness')
         self.density = meshSection.as_float('density')
         self.E = meshSection.as_float('Youngs Modulus')
         self.v = meshSection.as_float('Poissons Ratio')

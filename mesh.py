@@ -48,7 +48,7 @@ class Mesh:
         # Set the nodes and coordinates.
         self.nNodes = self.polyDataModel.GetNumberOfPoints() # _nNodes
         vtkNodes = self.polyDataModel.GetPoints().GetData()
-        self.nodes = vtk_to_numpy(vtkNodes) # _nodes
+        self.nodes = np.copy(vtk_to_numpy(vtkNodes)) # _nodes # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         self.commNodeIds = None # common nodes processor contains
         self.totalCommNodeIds = None
 
@@ -65,6 +65,7 @@ class Mesh:
         # Set the domain id.
         self.domainId = meshConfig.domainId
         # Set the physical parameters.
+        self.thickness = meshConfig.thickness
         self.density = meshConfig.density
         self.E = meshConfig.E
         self.v = meshConfig.v

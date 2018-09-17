@@ -177,10 +177,12 @@ class CVFES:
         # than one will be set to the common and broadcast to all processors.
         # And each processor will recognize the common nodes it has according to the info it received.
         # Collect local nodes' numbers.
-        myNodes = np.empty(3*mesh.nElements, dtype=np.int64)
-        for iElm, elm in enumerate(mesh.elements):
-            myNodes[3*iElm : 3*(iElm+1)] = elm.nodes
-        myNodes = np.unique(myNodes)
+
+        # myNodes = np.empty(3*mesh.nElements, dtype=np.int64)
+        # for iElm, elm in enumerate(mesh.elements):
+        #     myNodes[3*iElm : 3*(iElm+1)] = elm.nodes
+        myNodes = np.array([elm.nodes for elm in mesh.elements])
+        myNodes = np.sort(np.unique(myNodes.ravel()))
         # Start to send and recv to filter the common nodes.
         if self.rank == 0:
             # Prepare the counter vector.
@@ -210,7 +212,6 @@ class CVFES:
         # mesh.commNodeIds = np.array(list(set(commonNodes).intersection(myNodes)))
         mesh.totalCommNodeIds = commonNodes
         mesh.commNodeIds = np.intersect1d(commonNodes, myNodes)
-
 
         # TODO:: Try to read the existing calculated results from local files, if exists start from there,
         #        if not start from initial conditions.
