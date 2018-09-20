@@ -84,6 +84,7 @@ class Mesh:
 
         # Set the result filename.
         self.stressFilename = meshConfig.stressFilename
+        self.saveResNum = meshConfig.saveResNum
 
     def setInitialConditions(self, iniCondConfig):
         # Set the acceleration
@@ -137,22 +138,24 @@ class Mesh:
         """ Save the stress result of elements at time t with stress tensor of dim.
             Dim is an array like ['xx', 'yy', 'xy', 'xz', 'yz']
         """
-        for i, name in enumerate(dim):
-            stressVec = numpy_to_vtk(stress[:,i])
-            stressVec.SetName(name)
-            self.polyDataModel.GetCellData().AddArray(stressVec)
+        # for i, name in enumerate(dim):
+        #     stressVec = numpy_to_vtk(stress[:,i])
+        #     stressVec.SetName('{}_{}'.format(t, name))
+        #     self.polyDataModel.GetCellData().AddArray(stressVec)
 
         if u is not None:
             uTuples = numpy_to_vtk(u)
-            uTuples.SetName('displacement')
+            uTuples.SetName('displacement_{}'.format(t))
             self.polyDataModel.GetPointData().AddArray(uTuples)
 
-        filename, fileExtension = splitext(self.stressFilename)
-        stressFilename = '{}{}{}'.format(filename, t, fileExtension)
+    def SaveToFile(self):
 
-        writer = vtk.vtkXMLPolyDataWriter() if fileExtension.endswith('vtp') else vtk.vtkUnstructuredGridWriter()
+        # filename, fileExtension = splitext(self.stressFilename)
+        # stressFilename = '{}{}{}'.format(filename, t, fileExtension)
+
+        writer = vtk.vtkXMLPolyDataWriter() if self.stressFilename.endswith('vtp') else vtk.vtkUnstructuredGridWriter()
         writer.SetInputData(self.polyDataModel)
-        writer.SetFileName(stressFilename)
+        writer.SetFileName(self.stressFilename)
         writer.Write()
 
 

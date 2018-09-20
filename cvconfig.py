@@ -93,7 +93,7 @@ class MeshConfig(Config):
 
         # Config the result filename.
         self.stressFilename = meshSection['stress_filename']
-
+        self.saveResNum = meshSection['save_result_num']
 
 class SolverConfig():
 
@@ -103,7 +103,6 @@ class SolverConfig():
         self.dt = solverSection.as_float('dt')
         self.endtime = solverSection.as_float('endtime')
         self.tolerance = solverSection.as_float('tolerance')
-
 
 class CVConfig:
 

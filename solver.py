@@ -30,6 +30,7 @@ TAG_COMM_DOF_VALUE = 212
 TAG_STRESSES = 222
 TAG_DISPLACEMENT = 223
 # TAG_UNION = 224
+TAG_CHECKING_STIFFNESS = 311
 
 """ Shape functions
 """
@@ -103,7 +104,7 @@ class GaussianQuadrature:
         integral = 0.0
         for i in xrange(len(cls.XW)):
             integral += f(cls.XW[i][0:3]) * cls.XW[i][3]
-        return integral * (2.0*area)
+        return integral * (area)
 
 
 """ Sparse matrix utilities.
@@ -226,35 +227,40 @@ class SolidSolver(PhysicSolver):
         # Prepare the sparse info structure.
         self.sparseInfo = SparseInfo(mesh, SolidSolver.Dof)
 
+    def Save(self):
+        if self.rank == 0:
+            self.mesh.SaveToFile()
+
     def Initialize(self, dt):
+        """ Prepare u and up to start time integration. """
+        # First assemble the matrices.
+        self.Assemble(0.0)
         # Calculate acceleration in initial using the equilibrium.
         RHS = self.f - self.LC*self.du - self.sparseInfo.MultiplyByVector(self.K, self.u)
-        LHS = self.LM
+        LHS = np.copy(self.LM)
+        self.SyncCommNodes(LHS) # Only left-hand-side needs to be synchronized.
         ddu = np.divide(RHS, LHS, out=np.zeros_like(RHS), where=LHS!=0)
         # Calculate u_-1 = u_0 - dt*du_0 + 0.5*dt**2*ddu_0
         self.up = self.u - dt*self.du + 0.5*(dt**2)*ddu
 
-    def Solve(self, t, dt):
+        # Prepare the left hand side.
+        self.LHS = self.LM + 0.5*dt*self.LC
+        self.SyncCommNodes(self.LHS) # Only left-hand-side needs to be synchronized.
+
+    def Solve(self, t, dt, save=False):
         """ One time step solver. """
+        if self.rank == 0:
+            print('Current time is {}.\n'.format(t))
 
-        # Assemble the mass, (damping,) stiffness matrix and force vector.
-        self.Assemble(t)
-        # Synchronize the common nodes values.
-        self.SyncCommNodes(self.LM)
-
-        # self.SyncCommNodes(self.LC, SolidSolver.Dof)
-
-        # Prepare u and up to start time integration.
-        if t == 0.0:
-            self.Initialize(dt)
+        # Assemble the stiffness matrix and force vector.
+        self.AssembleUpdate(t)
 
         # Calculate the displacement for next time step (n+1).
-        LHS = self.LM + 0.5*dt*self.LC
         A1 = (dt**2) * self.f
         A2 = 2.0*self.LM * self.u - self.sparseInfo.MultiplyByVector((dt**2)*self.K, self.u)
         A3 = (0.5*dt*self.LC - self.LM) * self.up
         RHS = A1 + A2 + A3
-        u = np.divide(RHS, LHS, out=np.zeros_like(RHS), where=LHS!=0)
+        u = np.divide(RHS, self.LHS, out=np.zeros_like(RHS), where=self.LHS!=0)
         # Synchronize u.
         self.SyncCommNodes(u)
         self.ApplyBoundaryCondition(u)
@@ -264,7 +270,7 @@ class SolidSolver(PhysicSolver):
         self.u = u
 
         # Post processing: calculate stress and save.
-        self.PostProcess(t+dt)
+        self.PostProcess(t+dt, save)
         # Barrier everyone!
         self.comm.Barrier()
 
@@ -299,6 +305,7 @@ class SolidSolver(PhysicSolver):
             # TODO:: Form a official way to calculate the force item.
             # localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * triangular.area / 3.0
             tempTraction = 0.5 - 0.5 * cos(pi*t) # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # tempTraction = 1.0
             localf = np.array([0,0,1,0,0,1,0,0,1])*tempTraction * triangular.area / 3.0
             # Transform back to the glocal coordinates.
             bT = SolidSolver.BigTransformation(T)
@@ -314,9 +321,50 @@ class SolidSolver(PhysicSolver):
             self.sparseInfo.Assemble(self.K, K, elm.nodes, dofs)
             self.f[dofs] += f
 
-        # Lump matrix M and K.
+        # Lump matrix M and C.
         self.LM = self.sparseInfo.Lump(self.M)
         self.LC = np.zeros(len(self.sparseInfo.indptr) - 1) # TODO:: Add the C matrix.
+
+    def AssembleUpdate(self, t):
+        """ Now assume that:
+            element type: triangular
+        """
+        self.K = np.zeros(self.sparseInfo.length)
+        self.f = np.zeros(len(self.sparseInfo.indptr) - 1) # nNodes*dof
+
+        # The elemental D matrix is static.
+        tD = TriangularForSolid.D(self.mesh.E, self.mesh.v)
+
+        # Start to loop through the elements.
+        for iElm, elm in enumerate(self.mesh.elements):
+            # Get element nodes with coordinates.
+            nodes = self.mesh.nodes[elm.nodes]
+            # Transform the global coordinates into local plain one.
+            T = SolidSolver.CoordinateTransformation(nodes)
+            # Transform.
+            nodes = np.dot(nodes, np.transpose(T))
+            # Calculate local mass and stiffness matrix.
+            triangular = TriangularForSolid(nodes)
+            localK = np.dot(np.dot(np.transpose(triangular.B()), tD), triangular.B()) * triangular.area * self.mesh.thickness
+            # Calculate the RHS f.
+            # TODO:: Add the body force and initial stress and strain conditions.
+            # TODO:: Figure out what's the form of body force, traction and initial strain, eg. what's the right hand side.
+            # TODO:: Form a official way to calculate the force item.
+            # localf = np.array([0,0,1,0,0,1,0,0,1])*self.mesh.traction * triangular.area / 3.0
+            tempTraction = 0.5 - 0.5 * cos(pi*t) # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # tempTraction = 1.0
+            localf = np.array([0,0,1,0,0,1,0,0,1])*tempTraction * triangular.area / 3.0
+            # Transform back to the glocal coordinates.
+            bT = SolidSolver.BigTransformation(T)
+            bTp = np.transpose(bT)
+            # Transform.
+            K = np.dot(np.dot(bTp, localK), bT)
+            f = np.dot(bTp, localf)
+
+            # Assemble!!!
+            dofs = SparseInfo.GenerateDof(elm.nodes, SolidSolver.Dof)
+            self.sparseInfo.Assemble(self.K, K, elm.nodes, dofs)
+            self.f[dofs] += f
 
     def SyncCommNodes(self, quant, dof=None, func=None):
         """ Synchronize the quantity fo common nodes,
@@ -432,7 +480,7 @@ class SolidSolver(PhysicSolver):
                 recvLen = recvInfo.Get_count(MPI.INT64_T)
                 p = recvInfo.Get_source()
                 # Assign.
-                self.glbStresses[self.mesh.partition==p, :] = stressesBuf[:recvLen].reshape(recvLen/5, 5)
+                self.glbStresses[self.mesh.partition==p, :] = stressesBuf[:recvLen].reshape(recvLen/5, 5, order='C')
         else:
 
             self.comm.Send(self.stress.ravel(), 0, TAG_STRESSES)
@@ -449,7 +497,6 @@ class SolidSolver(PhysicSolver):
                 self.comm.Recv(uBuf, MPI.ANY_SOURCE, TAG_DISPLACEMENT)
                 # Flag the nodes uBuf acctually contains.
                 self.u[uBuf!=0] = uBuf[uBuf!=0]
-            print(self.u[:20])
 
         else:
             self.comm.Send(self.u, 0, TAG_DISPLACEMENT)
@@ -478,7 +525,6 @@ class SolidSolver(PhysicSolver):
     #         self.comm.Send(quant.ravel(), 0, TAG_UNION)
 
     #     return glbQuant
-
 
     @staticmethod
     def CoordinateTransformation(nodes):
@@ -655,19 +701,27 @@ class TransientSolver(Solver):
 
     def Solve(self):
 
-        while self.time <= self.endtime:
+        # Calculate when to save the result into file.
+        saveSteps = np.linspace(0.0, self.endtime, self.mesh.saveResNum)
+
+        # Solver initialize.
+        self.solidSolver.Initialize(self.dt)
+
+        while self.time < self.endtime:
             # Solve for the fluid part.
             self.fluidSolver.Solve()
             # Solve for the solid part based on
             # calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
-            self.solidSolver.Solve(self.time, self.dt)
+            self.solidSolver.Solve(self.time, self.dt, True) # save=(self.time in saveSteps)
             # Refresh the fluid solver's context
             # before next loop start.
             self.fluidSolver.RefreshContext(self.solidSolver)
 
             self.time += self.dt
 
+        # Save result into file.
+        self.solidSolver.Save()
 
 """ For generalized-a method:
 """
