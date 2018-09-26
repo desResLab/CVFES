@@ -93,7 +93,7 @@ class MeshConfig(Config):
 
         # Config the result filename.
         self.stressFilename = meshSection['stress_filename']
-        self.saveResNum = meshSection['save_result_num']
+        self.saveResNum = meshSection.as_int('save_result_num')
 
 class SolverConfig():
 

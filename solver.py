@@ -227,9 +227,9 @@ class SolidSolver(PhysicSolver):
         # Prepare the sparse info structure.
         self.sparseInfo = SparseInfo(mesh, SolidSolver.Dof)
 
-    def Save(self):
-        if self.rank == 0:
-            self.mesh.SaveToFile()
+    # def Save(self):
+    #     if self.rank == 0:
+    #         self.mesh.SaveToFile()
 
     def Initialize(self, dt):
         """ Prepare u and up to start time integration. """
@@ -693,6 +693,9 @@ class TransientSolver(Solver):
         # Init the solver which is inside of the time loop.
         self.__initPhysicSolver__(comm, mesh, config)
 
+        # Save time step counter.
+        self.saveCounter = 0
+
     def __initPhysicSolver__(self, comm, mesh, config):
         """ Initialize the fluid and solid solver. """
 
@@ -702,7 +705,7 @@ class TransientSolver(Solver):
     def Solve(self):
 
         # Calculate when to save the result into file.
-        saveSteps = np.linspace(0.0, self.endtime, self.mesh.saveResNum)
+        saveSteps = int(self.endtime / self.dt / (self.mesh.saveResNum+1))
 
         # Solver initialize.
         self.solidSolver.Initialize(self.dt)
@@ -713,15 +716,16 @@ class TransientSolver(Solver):
             # Solve for the solid part based on
             # calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
-            self.solidSolver.Solve(self.time, self.dt, True) # save=(self.time in saveSteps)
+            self.solidSolver.Solve(self.time, self.dt, self.saveCounter%saveSteps==0) # save=(self.time in saveSteps)
             # Refresh the fluid solver's context
             # before next loop start.
             self.fluidSolver.RefreshContext(self.solidSolver)
 
             self.time += self.dt
+            self.saveCounter += 1
 
-        # Save result into file.
-        self.solidSolver.Save()
+        # # Save result into file.
+        # self.solidSolver.Save()
 
 """ For generalized-a method:
 """

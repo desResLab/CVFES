@@ -145,17 +145,25 @@ class Mesh:
 
         if u is not None:
             uTuples = numpy_to_vtk(u)
-            uTuples.SetName('displacement_{}'.format(t))
+            uTuples.SetName('displacement')
             self.polyDataModel.GetPointData().AddArray(uTuples)
 
-    def SaveToFile(self):
-
-        # filename, fileExtension = splitext(self.stressFilename)
-        # stressFilename = '{}{}{}'.format(filename, t, fileExtension)
+        filename, fileExtension = splitext(self.stressFilename)
+        stressFilename = '{}{}{}'.format(filename, t, fileExtension)
 
         writer = vtk.vtkXMLPolyDataWriter() if self.stressFilename.endswith('vtp') else vtk.vtkUnstructuredGridWriter()
         writer.SetInputData(self.polyDataModel)
-        writer.SetFileName(self.stressFilename)
+        writer.SetFileName(stressFilename)
         writer.Write()
+
+    # def SaveToFile(self):
+
+    #     # filename, fileExtension = splitext(self.stressFilename)
+    #     # stressFilename = '{}{}{}'.format(filename, t, fileExtension)
+
+    #     writer = vtk.vtkXMLPolyDataWriter() if self.stressFilename.endswith('vtp') else vtk.vtkUnstructuredGridWriter()
+    #     writer.SetInputData(self.polyDataModel)
+    #     writer.SetFileName(self.stressFilename)
+    #     writer.Write()
 
 
