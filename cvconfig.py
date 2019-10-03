@@ -29,6 +29,22 @@ class FaceConfig(Config):
         Config.__init__(self, faceSection)
 
 
+class MeshConfig(Config):
+
+    def __init__(self, meshSection):
+        Config.__init__(self, meshSection)
+        self.domainId = meshSection.as_int('domain_id')
+
+        self.faces = []
+        if 'faces' in meshSection:
+            facesConfig = meshSection['faces']
+            for section in facesConfig.sections:
+                if section.startswith('face'):
+                    self.faces.append(FaceConfig(facesConfig[section]))
+
+        # DEBUG:
+        # print 'Mesh {} contains {} faces in domain {}\n'.format(self.name, len(self.faces), self.domainId)
+
 class ConditionConfig:
 
     def __init__(self):
@@ -50,50 +66,68 @@ class ConditionConfig:
 
 class InitialConditionsConfig(ConditionConfig):
 
-    def __init__(self, iniCndSection):
+    def __init__(self, iniCndSection, name):
 
         ConditionConfig.__init__(self)
 
-        self.acceleration = self.getProp(iniCndSection, 'acceleration')
-        self.velocity = self.getProp(iniCndSection, 'velocity')
-        self.pressure = self.getProp(iniCndSection, 'pressure')
-        self.displacement = self.getProp(iniCndSection, 'displacement')
+        if name == 'fluid':
+            self.acceleration = self.getProp(iniCndSection, 'acceleration')
+            self.velocity = self.getProp(iniCndSection, 'velocity')
+            self.pressure = self.getProp(iniCndSection, 'pressure')
+        else:
+            self.velocity = self.getProp(iniCndSection, 'velocity')
+            self.displacement = self.getProp(iniCndSection, 'displacement')
 
 class BoundaryConditionsConfig(ConditionConfig):
 
-    def __init__(self, bdyCndSection):
+    def __init__(self, bdyCndSection, name):
 
         ConditionConfig.__init__(self)
 
-        self.traction = self.getProp(bdyCndSection, 'traction')
+        if name == 'fluid':
+            self.inletVelocity = self.getProp(bdyCndSection, 'inlet_velocity')
+        else:
+            self.bdyDisplacement = self.getProp(bdyCndSection, 'displacement')
 
+class EquationConfig():
 
-class MeshConfig(Config):
+    def __init__(self, equationSection):
 
-    def __init__(self, meshSection):
-        Config.__init__(self, meshSection)
-        self.domainId = meshSection.as_int('domain_id')
-        self.thickness = meshSection.as_float('thickness')
-        self.density = meshSection.as_float('density')
-        self.E = meshSection.as_float('Youngs Modulus')
-        self.v = meshSection.as_float('Poissons Ratio')
+        if equationSection['name'] == 'fluid':
+            try:
+                self.dviscosity = equationSection.as_float('dynamic_viscosity')
+                self.density = equationSection.as_float('density')
+            except KeyError as ex:
+                print('Key {} does not exits!'.format(ex))
+        else:
+            try:
+                self.thickness = equationSection.as_float('thickness') # TODO: to be reconsidered!!!!!!!!!!!!!!!!!!!!
+                self.density = equationSection.as_float('density')
+                self.E = equationSection.as_float('Youngs Modulus')
+                self.v = equationSection.as_float('Poissons Ratio')
+                self.damp = equationSection.as_float('Damp')
+            except KeyError as ex:
+                print('Key {} does not exits!'.format(ex))
 
-        self.faces = []
-        if 'faces' in meshSection:
-            facesConfig = meshSection['faces']
-            for section in facesConfig.sections:
-                if section.startswith('face'):
-                    self.faces.append(FaceConfig(facesConfig[section]))
+            self.thicknessFilename = None
+            self.sigmaThickness = 0.0
+            self.rhoThickness = 3.7
+            if 'thickness Filename' in equationSection:
+                self.thicknessFilename = equationSection['thickness Filename']
+                self.sigmaThickness = equationSection.as_float('thickness sigma')
+                self.rhoThickness = equationSection.as_float('thickness rho')
 
-        self.initialConditions = InitialConditionsConfig(meshSection['initial conditions'])
-        self.boundaryConditions = BoundaryConditionsConfig(meshSection['boundary conditions'])
+            self.YoungsModulusFilename = None
+            self.sigmaE = 0.0
+            self.rhoE = 3.7
+            if 'Youngs Modulus Filename' in equationSection:
+                self.YoungsModulusFilename = equationSection['Youngs Modulus Filename']
+                self.sigmaE = equationSection.as_float('Youngs Modulus sigma')
+                self.rhoE = equationSection.as_float('Youngs Modulus rho')
 
-        # DEBUG:
-        # print 'Mesh {} contains {} faces in domain {}\n'.format(self.name, len(self.faces), self.domainId)
+        self.initialConditions = InitialConditionsConfig(equationSection['initial conditions'], equationSection['name'])
+        self.boundaryConditions = BoundaryConditionsConfig(equationSection['boundary conditions'], equationSection['name'])
 
-        # Config the result filename.
-        self.stressFilename = meshSection['stress_filename']
-        self.saveResNum = meshSection.as_int('save_result_num')
 
 class SolverConfig():
 
@@ -103,6 +137,22 @@ class SolverConfig():
         self.dt = solverSection.as_float('dt')
         self.endtime = solverSection.as_float('endtime')
         self.tolerance = solverSection.as_float('tolerance')
+        self.rho_infinity = solverSection.as_float('rho_infinity')
+        self.imax = solverSection.as_int('imax')
+        self.ci = solverSection.as_float('ci')
+
+        # for solid part
+        self.update_interval = solverSection.as_int('stiffness_update_interval')
+        self.constant_pressure = solverSection.as_float('constant_pressure')
+        self.constant_T = solverSection.as_float('constant_T')
+
+        self.restart = solverSection.as_bool('restart')
+        self.restartFilename = solverSection['restart_displacement_file']
+        self.restartTimestep = solverSection.as_int('restart_timestep')
+
+        self.saveStressFilename = None
+        self.saveResNum = None
+
 
 class CVConfig:
 
@@ -111,16 +161,40 @@ class CVConfig:
         collect configuration informations. """
 
         # Constant parameters.
+        self.ndim = config.as_int('dimensions')
+        self.nSmp = config.as_int('sample_num')
+        self.regenerate_samples = config.as_bool('regenerate_samples')
+
         # Meshes.
-        self.meshes = []
+        self.meshes = {}
         try:
             meshesConfig = config['meshes']
             for section in meshesConfig.sections:
                 if section.startswith('mesh'):
-                    self.meshes.append(MeshConfig(meshesConfig[section]))
+                    self.meshes[meshesConfig[section]['name']] = MeshConfig(meshesConfig[section])
+        except KeyError as ex:
+            print('Key {} does not exits!'.format(ex))
+
+        # Equation parameters.
+        self.equations = {}
+        try:
+            eqnsConfig = config['equations']
+            for section in eqnsConfig.sections:
+                if section.startswith('equation'):
+                    self.equations[eqnsConfig[section]['name']] = EquationConfig(eqnsConfig[section])
         except KeyError as ex:
             print('Key {} does not exits!'.format(ex))
 
         # Solver parameters.
         self.solver = SolverConfig(config['solver'])
+
+        # Config the result filename.
+        self.solver.saveStressFilename = config['save_stress_filename']
+        self.solver.saveResNum = config.as_int('save_result_num')
+
+        # Config the number of samples being used in Solid part.
+        self.meshes['wall'].nSmp = self.nSmp
+        self.meshes['wall'].regenerate_samples = self.regenerate_samples
+        self.solver.nSmp = self.nSmp
+
 

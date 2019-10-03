@@ -7,8 +7,12 @@
     Main file of the CVFES project.
 """
 from mpi4py import MPI
-from cvcomm import CVCOMM
 from cvfes import CVFES
+from timeit import default_timer as timer
+# Profiling.
+import cProfile, pstats, io
+import sys
+import argparse
 
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
@@ -16,17 +20,48 @@ __copyright__ = "Copyright 2018, the CVFES project"
 
 def main():
 
-    # Construct comunications
-    # cvComm = CVCOMM(MPI.COMM_WORLD)
     comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
+    # Get the arguments.
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--samples', type=int, help='Number of samples.')
+    parser.add_argument('-f', '--file', default='cfg/input.cfg', help='Configuration file.')
+
+    args = parser.parse_args()
 
     cv = CVFES(comm)
+    cv.ReadInputFile(args.file, nSmp=args.samples)
 
-    cv.ReadInputFile("input.cfg")
+    if cv.Distribute() < 0:
+        sys.exit(-1)
 
-    cv.Distribute(0)
+    if cv.Coloring() < 0:
+        sys.exit(-1)
 
-    cv.Solve(0)
+    start = timer()
+
+    cv.Solve()
+
+    end = timer()
+    print('OK, rank: {} \t\t\t time: {:10.1f} ms'.format(rank, (end - start) * 1000.0))
+
+    return rank
 
 if __name__ == "__main__":
-    main()
+
+    # pr = cProfile.Profile()
+    # pr.enable()
+
+    rank = main()
+
+    # pr.disable()
+
+    # if rank == 0:
+    #     s = io.StringIO()
+    #     ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+    #     ps.print_stats()
+    #     print s.getvalue()
+
+    #     # pr.dump_stats('profile/CVFES.prof')
+
