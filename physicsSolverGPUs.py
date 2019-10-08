@@ -69,7 +69,7 @@ class GPUSolidSolver(PhysicsSolver):
         devices = platforms[0].get_devices(cl.device_type.GPU)
         ndevices = len(devices)
         if ndevices < self.size:
-            print('GPUs is not enough! Actural size: {}, need: {}'.format(ndevices, size))
+            print('GPUs is not enough! Actural size: {}, need: {}'.format(ndevices, self.size))
             return -1
 
         self.device = devices[self.rank]
