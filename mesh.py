@@ -79,7 +79,7 @@ class Face:
             self.glbNodeIds = np.where(np.in1d(tglbNodeIds, glbNodeIds))[0]
             # Add in elements info, only used by 'inlet' face now.
             self.nElements = polyDataModel.GetNumberOfCells()
-            self.elements = np.array([ElementOfFace(polyDataModel.GetCell(i)) for i in range(nElements)])
+            self.elements = np.array([ElementOfFace(polyDataModel.GetCell(i)) for i in range(self.nElements)])
 
 
 class Mesh:
@@ -166,7 +166,7 @@ class Mesh:
             for path in faceConfig.file_path:
                 faces.append(Face(path, self.glbNodeIds))
         else:
-            faces.append(Face(path, self.glbNodeIds))
+            faces.append(Face(faceConfig.file_path, self.glbNodeIds))
 
         return faces
 
@@ -266,7 +266,7 @@ class FluidMesh(Mesh):
         # Set the outlet Natural BC.
         # TODO:: Find out how to Apply Natrual BC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         for outletFace in self.faces['outlet']:
-            nOutlet = len(outletFace.nodes)
+            nOutlet = len(outletFace.glbNodeIds)
             outletFace.ouletH = self.setCondition(bdyCondConfig.outletH, 'h', n=nOutlet, dof=1)
 
     def Save(self, filename, counter, u, stress, uname='velocity'):

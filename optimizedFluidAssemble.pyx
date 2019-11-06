@@ -242,7 +242,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
     cdef double mu = coefs[5] # dynamic viscocity
     cdef double ci = coefs[6] # Ci
 
-    # cdef double nu = mu / rho # kinematic viscocity
+    cdef double nu = mu / rho # kinematic viscocity
     cdef double mr = am * rho
     cdef double fgt = af * gamma * dt
     cdef double mdfgt = am / fgt
@@ -252,7 +252,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
 
     cdef long[::1] eNIds = np.empty(nPts, dtype=long)
     cdef double[:,::1] DN = np.empty((ndim, nPts), dtype=np.float)
-    cdef double[:,::1] DivN = np.empty(nPts, dtype=np.float)
+    cdef double[::1] DivN = np.empty(nPts, dtype=np.float)
     cdef double[:,::1] G = np.empty((ndim, ndim), dtype=np.float)
     cdef double[::1] uh = np.empty(ndim, dtype=np.float)
     cdef double[:,::1] gradUh = np.empty((ndim, ndim), dtype=np.float)
@@ -289,7 +289,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
     cdef double c2 = ci * nu * nu
     cdef double c3 = 1.0 / rho
 
-    cdef long nGp = 4
+    cdef long nGp = 4 # w.shape[0]
     cdef long iGp
     cdef int i, j, k, a, b
 
@@ -473,7 +473,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
                 lR[2,a] += wr*(rV[2]*lN[iGp,a] + rN[2,0]*DN[0,a] + rN[2,1]*DN[1,a] + rN[2,2]*DN[2,a] \
                                + uhDN[a]*rM[2] + T1)
 
-                lR[4,a] += wr*(rM[0]*DN[0,a]+rM[1]*DN[1,a]+rM[2]*DN[2,a])
+                lR[3,a] += wr*(rM[0]*DN[0,a]+rM[1]*DN[1,a]+rM[2]*DN[2,a])
 
 
             for a in range(nPts):
@@ -540,7 +540,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
         T2 = mr * Ve * 0.05 # K-1
 
         for a in range(nPts):
-            lR[4,a] += T1
+            lR[3,a] += T1
             for b in range(nPts):
                 # K
                 lLHS[0,a,b] += T2

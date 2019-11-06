@@ -106,7 +106,7 @@ class SparseInfo:
         M_x = lambda x: P.solve(x)
         M = LinearOperator((self.ndof, self.ndof), M_x)
         y, info = gmres(A, rhs.reshape(self.ndof), M=M)
-        # print('Solving result: {}'.format(info))
+        print('Solving result: {}'.format(info))
 
         # y = np.zeros(self.ndof)
 

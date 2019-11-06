@@ -24,7 +24,7 @@ from timeit import default_timer as timer
 # TODO:: Debugging!!!!!!!!!!!!!!!!!!!!!
 
 # from assemble import Assemble, TestAssemble
-from optimizedFluidAssemble import optimizedFluidAssemble, OptimizedFluidBoundaryAssemble
+from optimizedFluidAssemble import OptimizedFluidAssemble, OptimizedFluidBoundaryAssemble
 
 
 __author__ = "Xue Li"
@@ -153,9 +153,9 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
                             [beta, alpha, beta, beta],
                             [beta, beta, alpha, beta],
                             [beta, beta, alpha, beta]])
-        self.lDN = np.array([[-1, 1, 0, 0],
-                             [-1, 0, 1, 0],
-                             [-1, 0, 0, 1]])
+        self.lDN = np.array([[-1.0, 1.0, 0.0, 0.0],
+                             [-1.0, 0.0, 1.0, 0.0],
+                             [-1.0, 0.0, 0.0, 1.0]])
 
         # Parameters for Triangle boundary
         self.triW = np.array([1.0/3.0, 1.0/3.0, 1.0/3.0])
@@ -224,10 +224,10 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         self.LHS[:,:,:] = 0.0
         self.RHS[:,:] = 0.0
 
-        OptimizedAssemble(nodes, elements, interDDu, interDu, interP, f,
-                          self.coefs, self.lN, self.lDN, self.w,
-                          self.sparseInfo.indptr, self.sparseInfo.indices,
-                          self.LHS, self.RHS)
+        OptimizedFluidAssemble(nodes, elements, interDDu, interDu, interP, f,
+                               self.coefs, self.lN, self.lDN, self.w,
+                               self.sparseInfo.indptr, self.sparseInfo.indices,
+                               self.LHS, self.RHS)
 
         # nodeA = 2323
         # indptr = self.sparseInfo.indptr
@@ -301,6 +301,9 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
         self.u = mesh.iniU # displacement
 
         self.beta = 0.25 * (1 + self.alpha_f - self.alpha_m)**2
+
+    def ApplyPressure(self, appTraction):
+        pass
 
     # def RefreshContext(self, physicSolver):
     #     # TODO:: Solid is the boundary of the fluid part, cannot do this assignment directly!
