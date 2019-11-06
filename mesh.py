@@ -7,7 +7,7 @@
     CVFES class is the main solver of the CVFES project.
 """
 from cvconfig import CVConfig
-from GMRF import GMRF
+# from GMRF import GMRF
 import numpy as np
 import os.path
 # from os.path import splitext
@@ -323,26 +323,26 @@ class SolidMesh(Mesh):
     def readProperties(self, mu, sigma, rho, propfilename, geofilename, regenerate=False):
         ''' Generate Gaussian Markov Random Fields for properties. '''
 
-        if propfilename is None:
-            prop = np.full((self.nNodes, self.nSmp), mu)
+        # if propfilename is None:
+        #     prop = np.full((self.nNodes, self.nSmp), mu)
 
-        else:
-            filename, fileExtension = os.path.splitext(propfilename)
-            filename = '{}{}_{}{}'.format(filename, self.nSmp, rho, fileExtension)
+        # else:
+        #     filename, fileExtension = os.path.splitext(propfilename)
+        #     filename = '{}{}_{}{}'.format(filename, self.nSmp, rho, fileExtension)
 
-            if (not regenerate) and os.path.exists(propfilename): # if the file exists just read it from file.
-                prop = np.load(filename)
+        #     if (not regenerate) and os.path.exists(propfilename): # if the file exists just read it from file.
+        #         prop = np.load(filename)
 
-            else: # if not, create the random fields and write them to files.
-                if self.rank == 0:
-                    prop = GMRF(geofilename, mu=mu, sigma=sigma, rho=rho, samplenum=self.nSmp, resfilename=filename)
-                self.comm.Barrier()
+        #     else: # if not, create the random fields and write them to files.
+        #         if self.rank == 0:
+        #             prop = GMRF(geofilename, mu=mu, sigma=sigma, rho=rho, samplenum=self.nSmp, resfilename=filename)
+        #         self.comm.Barrier()
 
-                if self.rank != 0:
-                    prop = np.load(filename)
-                self.comm.Barrier()
+        #         if self.rank != 0:
+        #             prop = np.load(filename)
+        #         self.comm.Barrier()
 
-        # prop = np.full((self.nNodes, self.nSmp), mu)
+        prop = np.full((self.nNodes, self.nSmp), mu)
 
         # filename, fileExtension = os.path.splitext(propfilename)
         # prop = np.load('{}{}{}'.format(filename, rho, fileExtension))
