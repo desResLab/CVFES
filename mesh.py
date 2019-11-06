@@ -44,19 +44,17 @@ class ElementOfFace(Element):
 
 class Face:
 
-    def __init__(self, faceConfig, tglbNodeIds):
+    def __init__(self, faceFilePath, tglbNodeIds):
 
-        self.glbNodeIds = np.empty(0)
-        self.elements = np.empty(0)
-        self.nElements = 0
-        self.appNodes = None
+        # self.glbNodeIds = np.empty(0)
+        # self.elements = np.empty(0)
+        # self.nElements = 0
+        # self.appNodes = None
 
-        if isinstance(faceConfig.file_path, list):
-            for path in faceConfig.file_path:
-                self.readinMesh(path, tglbNodeIds)
+        self.readinMesh(faceFilePath, tglbNodeIds)
 
-        else:
-            self.readinMesh(faceConfig.file_path, tglbNodeIds)
+        self.elementNodeIds = np.array([elm.nodes for elm in self.elements])
+        self.elementAreas = np.array([elm.area for elm in self.elements])
 
         # # Calculate inlet surface area.
         # if faceConfig.name == 'inlet':
@@ -78,11 +76,10 @@ class Face:
             # Find the indices of the face nodes.
             glbNodeIds = vtk_to_numpy(polyDataModel.GetPointData().GetArray('GlobalNodeID'))
             # self.glbNodeIds -= 1
-            self.glbNodeIds = np.append(self.glbNodeIds, np.where(np.in1d(tglbNodeIds, glbNodeIds))[0])
+            self.glbNodeIds = np.where(np.in1d(tglbNodeIds, glbNodeIds))[0]
             # Add in elements info, only used by 'inlet' face now.
-            nElements = polyDataModel.GetNumberOfCells()
-            self.nElements += nElements
-            self.elements = np.append(self.elements, [ElementOfFace(polyDataModel.GetCell(i)) for i in range(nElements)])
+            self.nElements = polyDataModel.GetNumberOfCells()
+            self.elements = np.array([ElementOfFace(polyDataModel.GetCell(i)) for i in range(nElements)])
 
 
 class Mesh:
@@ -105,7 +102,7 @@ class Mesh:
         #             print('Element {} contain it!'.format(i))
         #     sys.exit(0)
 
-        self.faces = {f.name: Face(f, self.glbNodeIds) for f in meshConfig.faces}
+        self.faces = {f.name: self.readFaces(f) for f in meshConfig.faces}
         self.processFaces()
 
         # ------------- Related to Partition -----------------
@@ -162,6 +159,16 @@ class Mesh:
         # Set the domain id.
         self.domainId = meshConfig.domainId
 
+    def readFaces(self, faceConfig):
+
+        faces = []
+        if isinstance(faceConfig.file_path, list):
+            for path in faceConfig.file_path:
+                faces.append(Face(path, self.glbNodeIds))
+        else:
+            faces.append(Face(path, self.glbNodeIds))
+
+        return faces
 
     def processFaces(self):
         pass
@@ -211,30 +218,35 @@ class FluidMesh(Mesh):
     def __init__(self, comm, config, meshConfig, eqnConfig):
         Mesh.__init__(self, comm, config, meshConfig, eqnConfig)
 
-        elementIds = np.zeros((self.nElements, 4), dtype=int)
-        elementIds[:,:] = self.elementNodeIds[:,[1,0,2,3]]
-        self.elementNodeIds = elementIds
+        # elementIds = np.zeros((self.nElements, 4), dtype=int)
+        # elementIds[:,:] = self.elementNodeIds[:,[1,0,2,3]]
+        # self.elementNodeIds = elementIds
 
         # ------------- Related to Calculation -----------------
         # Set the physical parameters.
         self.density = eqnConfig.density
         self.dviscosity = eqnConfig.dviscosity
+        self.f = eqnConfig.f
 
     def processFaces(self):
-        wall = self.faces['wall'].glbNodeIds
+        # Collect all the inlet and outlet
+        self.wall = np.array([w.glbNodeIds for w in self.faces['wall']]).ravel()
 
-        inletFace = self.faces['inlet']
-        inlet = inletFace.glbNodeIds
-        flags = np.isin(inlet, wall)
-        intersectNodes = inlet[flags]
-        inletFace.appNodes = inlet[~flags]
+        for inletFace in self.faces['inlet']:
+            inlet = inletFace.glbNodeIds
+            flags = np.isin(inlet, self.wall)
+            intersectNodes = inlet[flags]
+            inletFace.appNodes = inlet[~flags]
 
-        # Calculate the inlet area used for calculating BC velocity.
-        inletArea = 0.0
-        for iElm, elm in enumerate(inletFace.elements):
-            numIncluding = np.sum(~np.isin(inlet[elm.nodes], intersectNodes))
-            inletArea += elm.area * numIncluding / 3.0
-        self.inletArea = inletArea
+            # Calculate the inlet area used for calculating BC velocity.
+            inletArea = 0.0
+            for iElm, elm in enumerate(inletFace.elements):
+                numIncluding = np.sum(~np.isin(inlet[elm.nodes], intersectNodes))
+                inletArea += elm.area * numIncluding / 3.0
+            inletFace.inletArea = inletArea
+
+        # Set the inlet to be appliable inlet glbNodeIds
+        self.inlet = np.array([il.appNodes for il in self.faces['inlet']]).ravel()
 
     def setInitialConditions(self, iniCondConfig):
         # Set the acceleration
@@ -246,9 +258,16 @@ class FluidMesh(Mesh):
 
     def setBoundaryCondtions(self, bdyCondConfig):
         # Set the inlet velocity BC.
-        nInlet = len(self.faces['inlet'].appNodes)
-        velocity = bdyCondConfig.inletVelocity / self.inletArea
-        self.inletVelocity = self.setCondition(velocity, 'velocity', n=nInlet, valueDof=2) # z-axis
+        for inletFace in self.faces['inlet']:
+            nInlet = len(inletFace.appNodes)
+            velocity = bdyCondConfig.inletVelocity / inletFace.inletArea
+            inletFace.inletVelocity = self.setCondition(velocity, 'velocity', n=nInlet, valueDof=2) # z-axis
+
+        # Set the outlet Natural BC.
+        # TODO:: Find out how to Apply Natrual BC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        for outletFace in self.faces['outlet']:
+            nOutlet = len(outletFace.nodes)
+            outletFace.ouletH = self.setCondition(bdyCondConfig.outletH, 'h', n=nOutlet, dof=1)
 
     def Save(self, filename, counter, u, stress, uname='velocity'):
         """ Save the stress result of elements at time t with stress tensor of dim.
@@ -276,10 +295,6 @@ class SolidMesh(Mesh):
 
     def __init__(self, comm, config, meshConfig, eqnConfig):
         Mesh.__init__(self, comm, config, meshConfig, eqnConfig)
-
-        # Prepare the boundary indices for use directly.
-        # self.boundary = np.append(self.faces['inlet'].glbNodeIds, self.faces['outlet'].glbNodeIds)
-        self.boundary = self.faces['boundaries'].glbNodeIds
 
         # ------------- Related to Calculation -----------------
         # Set the physical parameters.
@@ -333,6 +348,12 @@ class SolidMesh(Mesh):
         # prop = np.load('{}{}{}'.format(filename, rho, fileExtension))
 
         return prop
+
+
+    def processFaces(self):
+        # Prepare the boundary indices for use directly.
+        # self.boundary = np.append(self.faces['inlet'].glbNodeIds, self.faces['outlet'].glbNodeIds)
+        self.boundary = np.array([bdy.glbNodeIds for bdy in self.faces['boundaries']]).ravel()
 
     def setInitialConditions(self, iniCondConfig):
         # Set the velocity

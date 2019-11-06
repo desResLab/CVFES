@@ -14,17 +14,18 @@
 from cvconfig import CVConfig
 from mpi4py import MPI
 from mesh import *
-from shape import *
+# from shape import *
 from sparse import *
 from physicsSolver import *
-from gaussianQuadrature import *
+# from gaussianQuadrature import *
 from math import floor
 from math import cos, pi, sqrt
 from timeit import default_timer as timer
 # TODO:: Debugging!!!!!!!!!!!!!!!!!!!!!
 
 # from assemble import Assemble, TestAssemble
-from optimizedAssemble import OptimizedAssemble
+from optimizedFluidAssemble import optimizedFluidAssemble, OptimizedFluidBoundaryAssemble
+
 
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
@@ -61,6 +62,7 @@ class GeneralizedAlphaSolver(PhysicsSolver):
         self.Predict()
 
         # Newton-Raphson loop to approximate.
+        check = False
         for i in range(self.imax):
 
             # Initialize the value of current loop of current time step.
@@ -82,11 +84,12 @@ class GeneralizedAlphaSolver(PhysicsSolver):
             # Do the correction.
             self.Correct()
 
-            # if self.Check():
-            #     break
+            check = self.Check()
+            if check:
+                break
 
-            # # Initialize boundary condition.
-            # self.InitializeBC()
+        if not check:
+            print('Solution does not converge at time step {}'.format(t))
 
 
     def InitializeBC(self):
@@ -142,15 +145,30 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         print('Debug: size of pressure {}\n'.format(self.p.shape))
 
     def InitializeParameters(self):
-        shapes = Tetrahedron.shapes
-        XW = GQTetrahedron.XW
-        self.w = np.array([XW[0,-1], XW[1,-1], XW[2,-1], XW[3,-1]])
-        self.N = np.array([[shape(gp[0],gp[1],gp[2]) for shape in shapes] for gp in XW])
-        self.NN = np.array([np.outer(Ni, Ni) for Ni in self.N])
-        self.DN = np.array(Tetrahedron.ds)
+        # Parameters for Tetrahedron
+        alpha = 0.58541020
+        beta = 0.13819660
+        self.w = np.array([0.25, 0.25, 0.25, 0.25])
+        self.lN = np.array([[alpha, beta, beta, beta],
+                            [beta, alpha, beta, beta],
+                            [beta, beta, alpha, beta],
+                            [beta, beta, alpha, beta]])
+        self.lDN = np.array([[-1, 1, 0, 0],
+                             [-1, 0, 1, 0],
+                             [-1, 0, 0, 1]])
+
+        # Parameters for Triangle boundary
+        self.triW = np.array([1.0/3.0, 1.0/3.0, 1.0/3.0])
+        self.triLN = np.array([[0.5, 0.5, 0.0],
+                               [0.5, 0.0, 0.5],
+                               [0.0, 0.5, 0.5]])
 
         self.coefs = np.array([self.alpha_m, self.alpha_f, self.gamma,
                                self.dt, self.mesh.density, self.mesh.dviscosity, self.ci])
+
+        # Initialize the external_force
+        # TODO:: Update when f is a real function of time and space !!!!!!!
+        self.f = self.mesh.f * np.ones((self.mesh.nNodes, 3))
 
     # def RefreshContext(self, physicsSolver):
     #     # TODO:: only update the boundary!
@@ -158,9 +176,11 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
     def InitializeBC(self):
         # Combine the boundary condition at the start of each time step.
-        dofs = SparseInfo.GenerateDof(self.mesh.faces['inlet'].appNodes, PhysicsSolver.Dof)
-        self.du[dofs] = self.mesh.inletVelocity
-        dofs = SparseInfo.GenerateDof(self.mesh.faces['wall'].glbNodeIds, PhysicsSolver.Dof)
+        for inlet in self.mesh.faces['inlet']:
+            dofs = self.sparseInfo.GenerateDofs(inlet.appNodes, 3)
+            self.du[dofs] = inlet.inletVelocity
+
+        dofs = self.sparseInfo.GenerateDofs(self.mesh.wall, 3)
         self.du[dofs] = 0.0
 
 
@@ -178,10 +198,12 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         # p does not change.
         self.p = self.pP
 
+
     def Initialize(self):
 
         self.interDDu = (1-self.alpha_m)*self.dduP + self.alpha_m*self.ddu
         self.interDu = (1-self.alpha_f)*self.duP + self.alpha_f*self.du
+
 
     def OptimizedAssemble(self):
 
@@ -193,14 +215,17 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         interDu = self.interDu.reshape(nNodes, 3)
         interP = self.p
 
+        # External forces.
+        f = self.f
+
         # print "OptimizedAssemble", interDu[1858]
         # print "OptimizedAssemble", interP[1858]
 
         self.LHS[:,:,:] = 0.0
         self.RHS[:,:] = 0.0
 
-        OptimizedAssemble(nodes, elements, interDDu, interDu, interP,
-                          self.coefs, self.N, self.NN, self.DN, self.w,
+        OptimizedAssemble(nodes, elements, interDDu, interDu, interP, f,
+                          self.coefs, self.lN, self.lDN, self.w,
                           self.sparseInfo.indptr, self.sparseInfo.indices,
                           self.LHS, self.RHS)
 
@@ -212,9 +237,15 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         # print self.LHS[ind]
         # print self.RHS[nodeA]
 
+        for outlet in self.mesh.faces['outlet']:
+            OptimizedFluidBoundaryAssemble(nodes, outlet.glbNodeIds, outlet.elementNodeIds,
+                                           outlet.elementAreas, outlet.ouletH,
+                                           self.triLN, self.triW, self.RHS)
+
+
         # Apply boundary condition, e.g. set the increment at boundary to be zero.
-        self.sparseInfo.ApplyCondition(self.LHS, self.RHS, self.mesh.faces['inlet'].glbNodeIds, 0.0, dof=[0,1,2])
-        self.sparseInfo.ApplyCondition(self.LHS, self.RHS, self.mesh.faces['wall'].glbNodeIds, 0.0, dof=[0,1,2])
+        self.sparseInfo.ApplyCondition(self.LHS, self.RHS, self.mesh.inlet, 0.0, dof=[0,1,2])
+        self.sparseInfo.ApplyCondition(self.LHS, self.RHS, self.mesh.wall, 0.0, dof=[0,1,2])
 
         # nodeA = 1858
         # indptr = self.sparseInfo.indptr
@@ -227,11 +258,12 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         # print self.LHS[2323]
         # print self.RHS[2323]
 
+
     def SolveLinearSystem(self):
         sstart = timer()
         # Only deals with one processor here!
         # TODO:: linear system solver on multiple processors and GPUs!!!!!!!!!!!!!
-        up = self.sparseInfo.Solve(self.LHS, self.RHS)
+        up = self.sparseInfo.Solve(self.LHS, -self.RHS)
         udof = np.arange(self.sparseInfo.ndof).reshape(self.mesh.nNodes, self.Dof)[:,:3].reshape(self.mesh.ndof)
         self.deltaDDu = up[udof]
         # print "SolveLinearSystem", self.deltaDDu[1858*3:1858*3+3]
@@ -251,7 +283,7 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         # print "Correct", self.du[1858*3:1858*3+3]
 
     def Check(self):
-        residual = np.linalg.norm(-self.RHS)
+        residual = np.linalg.norm(self.RHS)
         # print residual
         return residual < self.tolerance
 

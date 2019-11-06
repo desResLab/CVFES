@@ -139,6 +139,9 @@ class SparseInfo:
         baseArray = np.arange(self.dof)
         return np.array([node*self.dof+baseArray for node in nodes]).ravel()
 
+    def GenerateDofs(self, nodes, dof):
+        baseArray = np.arange(dof)
+        return np.array([node*dof+baseArray for node in nodes]).ravel()
 
     def OperationCounting(self):
         nOpts = 0

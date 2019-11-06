@@ -86,6 +86,7 @@ class BoundaryConditionsConfig(ConditionConfig):
 
         if name == 'fluid':
             self.inletVelocity = self.getProp(bdyCndSection, 'inlet_velocity')
+            self.outletH = self.getProp(bdyCndSection, 'outlet_h')
         else:
             self.bdyDisplacement = self.getProp(bdyCndSection, 'displacement')
 
@@ -97,6 +98,7 @@ class EquationConfig():
             try:
                 self.dviscosity = equationSection.as_float('dynamic_viscosity')
                 self.density = equationSection.as_float('density')
+                self.f = equationSection.as_float('external_force')
             except KeyError as ex:
                 print('Key {} does not exits!'.format(ex))
         else:
