@@ -122,10 +122,10 @@ class GeneralizedAlphaSolver(PhysicsSolver):
 
 class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
-    Dof = 4 # 3 fo velocity (du) and 1 of pressure
-
     def __init__(self, comm, mesh, config):
         GeneralizedAlphaSolver.__init__(self, comm, mesh, config)
+
+        self.Dof = 4 # 3 fo velocity (du) and 1 of pressure
 
         # Initialize the context.
         self.ddu = mesh.iniDDu # acceleration
