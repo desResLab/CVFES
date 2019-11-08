@@ -464,14 +464,14 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
 
             for a in range(nPts):
 
-                T1 = tauC*DivN[a]*trGradUh
+                T1 = tauC*trGradUh
 
                 lR[0,a] += wr*(rV[0]*lN[iGp,a] + rN[0,0]*DN[0,a] + rN[0,1]*DN[1,a] + rN[0,2]*DN[2,a] \
-                               + uhDN[a]*rM[0] + T1)
+                               + uhDN[a]*rM[0] + T1*DN[0,a])
                 lR[1,a] += wr*(rV[1]*lN[iGp,a] + rN[1,0]*DN[0,a] + rN[1,1]*DN[1,a] + rN[1,2]*DN[2,a] \
-                               + uhDN[a]*rM[1] + T1)
+                               + uhDN[a]*rM[1] + T1*DN[1,a])
                 lR[2,a] += wr*(rV[2]*lN[iGp,a] + rN[2,0]*DN[0,a] + rN[2,1]*DN[1,a] + rN[2,2]*DN[2,a] \
-                               + uhDN[a]*rM[2] + T1)
+                               + uhDN[a]*rM[2] + T1*DN[2,a])
 
                 lR[3,a] += wr*(rM[0]*DN[0,a]+rM[1]*DN[1,a]+rM[2]*DN[2,a])
 
@@ -523,9 +523,9 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
                     lLHS[10,a,b] += wrl*((nu + tauC)*rN[2,2] + T1)
 
                     # G  dM/dP
-                    lLHS[3,a,b] -= wl*(DN[0,a]*lN[iGp,b] - DN[0,b]*T2)
-                    lLHS[7,a,b] -= wl*(DN[1,a]*lN[iGp,b] - DN[1,b]*T2)
-                    lLHS[11,a,b] -= wl*(DN[2,a]*lN[iGp,b] - DN[2,b]*T2)
+                    lLHS[3,a,b] -= wGpV*(DN[0,a]*lN[iGp,b] - DN[0,b]*T2)
+                    lLHS[7,a,b] -= wGpV*(DN[1,a]*lN[iGp,b] - DN[1,b]*T2)
+                    lLHS[11,a,b] -= wGpV*(DN[2,a]*lN[iGp,b] - DN[2,b]*T2)
 
                     # D  dC/dU
                     lLHS[12,a,b] += wl*(lN[iGp,a]*DN[0,b] + DN[0,a]*T3)
