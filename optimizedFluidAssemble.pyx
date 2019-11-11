@@ -473,7 +473,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
                 lR[2,a] += wr*(rV[2]*lN[iGp,a] + rN[2,0]*DN[0,a] + rN[2,1]*DN[1,a] + rN[2,2]*DN[2,a] \
                                + uhDN[a]*rM[2] + T1*DN[2,a])
 
-                lR[3,a] += wr*(rM[0]*DN[0,a]+rM[1]*DN[1,a]+rM[2]*DN[2,a])
+                lR[3,a] += wGpV*(rM[0]*DN[0,a]+rM[1]*DN[1,a]+rM[2]*DN[2,a])
 
 
             for a in range(nPts):
@@ -497,7 +497,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
 
                     # print "DNDN ", np.asarray(DNDN)
 
-                    # K-2, K-3, K-4
+                    # K-2, K-3, K-4, K-6
                     T1 = tauM*uhDN[a]*(lN[iGp,b]*mdfgt + uhDN[b]) \
                         + lN[iGp,a]*uhDN[b] + nu*DNDN
                     T2 = tauM*uhDN[a]
@@ -536,7 +536,7 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
                     lLHS[15,a,b] += wGpV*tauM*DNDN*c3
 
         # Process the items do not depend on Gaussian points.
-        T1 = trGradUh * Ve # Nc-1
+        T1 = trGradUh * Ve * 0.25 # Nc-1
         T2 = mr * Ve * 0.05 # K-1
 
         for a in range(nPts):
