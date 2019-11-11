@@ -1,0 +1,14 @@
+#!/bin/csh
+
+#$ -M xli26@nd.edu	 # Email address for job notification
+#$ -m e			 # Send mail when job begins, ends and aborts
+#$ -pe smp 1		 # Specify parallel environment and legal core size
+#$ -q long	 	 # Specify queue
+#$ -N CVFESCPU_Fluid	 # Specify job name
+#$ -t 1-9:2	         # Specify number of tasks in array
+
+setenv OMP_NUM_THREADS 2
+
+set nSmps = ( 1 10 20 100 200 500 )
+
+mpiexec -n $NSLOTS python3 -m mpi4py main.py -f cfg/input.cfg $SGE_TASK_ID

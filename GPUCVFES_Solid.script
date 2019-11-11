@@ -1,0 +1,15 @@
+#!/bin/csh
+
+#$ -M xli26@nd.edu          # Email address for job notification
+#$ -m e                     # Send mail when job begins, ends and aborts
+#$ -q gpu@@appliedmath_gpu
+#$ -l gpu_card=2
+#$ -pe smp 2                # Specify parallel environment and legal core size
+#$ -N GPUCVFES_Solid        # Specify job name
+##$ -t 1-9:2                # Specify number of tasks in array
+
+
+module load python
+module load cuda
+
+mpiexec -n $NSLOTS python3 -m mpi4py main.py -f cfg/input.cfg
