@@ -290,6 +290,23 @@ class FluidMesh(Mesh):
 
         print('Write result to {}.'.format(stressFilename))
 
+    def DebugSave(self, filename, vals, uname=['debug'], pointData=[True]):
+        for i, val in enumerate(vals):
+            uTuples = numpy_to_vtk(val)
+            uTuples.SetName(uname[i])
+            if pointData[i]:
+                self.polyDataModel.GetPointData().AddArray(uTuples)
+            else:
+                self.polyDataModel.GetCellData().AddArray(uTuples)
+
+        writer = vtk.vtkXMLUnstructuredGridWriter() # if fileExtension.endswith('vtp') else vtk.vtkXMLUnstructuredGridWriter()
+        writer.SetInputData(self.polyDataModel)
+        writer.SetFileName(filename)
+        writer.Write()
+
+        print('Write result to {}.'.format(filename))
+
+
 
 class SolidMesh(Mesh):
 

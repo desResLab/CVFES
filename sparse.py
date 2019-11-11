@@ -84,7 +84,7 @@ class SparseInfo:
 
             rhs[nodeA,dof] = value
 
-    def Solve(self, lhs, rhs):
+    def Solve(self, lhs, rhs, x0=None):
         indptr = [0]
         indices = []
         flatLHS = []
@@ -105,7 +105,7 @@ class SparseInfo:
         P = spilu(A)
         M_x = lambda x: P.solve(x)
         M = LinearOperator((self.ndof, self.ndof), M_x)
-        y, info = gmres(A, rhs.reshape(self.ndof), M=M)
+        y, info = gmres(A, rhs.reshape(self.ndof), x0=x0, M=M)
         print('Solving result: {}'.format(info))
 
         # y = np.zeros(self.ndof)

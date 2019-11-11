@@ -25,7 +25,7 @@ from timeit import default_timer as timer
 
 # from assemble import Assemble, TestAssemble
 from optimizedFluidAssemble import OptimizedFluidAssemble, OptimizedFluidBoundaryAssemble
-
+import sys
 
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
@@ -136,6 +136,8 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         self.sparseInfo = SparseInfo(mesh, self.Dof)
         self.LHS = self.sparseInfo.New()
         self.RHS = np.zeros((self.mesh.nNodes, self.Dof))
+        # The delta values (result of sparse system) of each time step.
+        self.up = None
 
         # Initialize the parameters during solving.
         self.InitializeParameters()
@@ -143,6 +145,9 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         # Debugging ...
         print('Debug: {} elements {} nodes\n'.format(self.mesh.nElements, self.mesh.nNodes))
         print('Debug: size of pressure {}\n'.format(self.p.shape))
+
+        # # For debugging !!!!!!!!!!!!!!
+        # self.idbg = 0
 
     def InitializeParameters(self):
         # Parameters for Tetrahedron
@@ -247,6 +252,14 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         self.sparseInfo.ApplyCondition(self.LHS, self.RHS, self.mesh.inlet, 0.0, dof=[0,1,2])
         self.sparseInfo.ApplyCondition(self.LHS, self.RHS, self.mesh.wall, 0.0, dof=[0,1,2])
 
+        # dbgDu = self.du.reshape(self.mesh.nNodes, 3).copy()
+        # dbgP = self.p.copy()
+        # dbgRm = -self.RHS.reshape(self.mesh.nNodes, self.Dof)[:,:3].copy()
+        # dbgRc = -self.RHS.reshape(self.mesh.nNodes, self.Dof)[:,-1].copy()
+        # self.mesh.DebugSave('Debug{}.vtu'.format(self.idbg), [dbgDu, dbgP, dbgRm, dbgRc],
+        #                     uname=['velocity', 'pressure', 'Rm', 'Rc'], pointData=[True, True, True, True])
+        # self.idbg += 1
+
         # nodeA = 1858
         # indptr = self.sparseInfo.indptr
         # indices = self.sparseInfo.indices
@@ -263,12 +276,12 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         sstart = timer()
         # Only deals with one processor here!
         # TODO:: linear system solver on multiple processors and GPUs!!!!!!!!!!!!!
-        up = self.sparseInfo.Solve(self.LHS, -self.RHS)
+        self.up = self.sparseInfo.Solve(self.LHS, -self.RHS, self.up)
         udof = np.arange(self.sparseInfo.ndof).reshape(self.mesh.nNodes, self.Dof)[:,:3].reshape(self.mesh.ndof)
-        self.deltaDDu = up[udof]
+        self.deltaDDu = self.up[udof]
         # print "SolveLinearSystem", self.deltaDDu[1858*3:1858*3+3]
         pdof = np.arange(self.sparseInfo.ndof).reshape(self.mesh.nNodes, self.Dof)[:,-1].reshape(self.mesh.nNodes)
-        self.deltaP = up[pdof]
+        self.deltaP = self.up[pdof]
         # print "SolveLinearSystem", self.deltaP[1858]
 
         send = timer()
