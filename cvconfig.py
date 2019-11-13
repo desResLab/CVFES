@@ -55,6 +55,8 @@ class ConditionConfig:
             subConfig = config[key]
             if 'uniform_value' in subConfig:
                 prop = subConfig.as_float('uniform_value')
+            elif 'uniform_func' in subConfig:
+                prop = subConfig['uniform_func']
             elif 'file_name' in subConfig:
                 prop = subConfig['file_name']
             else:

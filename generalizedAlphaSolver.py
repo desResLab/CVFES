@@ -56,7 +56,7 @@ class GeneralizedAlphaSolver(PhysicsSolver):
     def Solve(self, t, dt):
 
         # Initialize boundary condition.
-        self.InitializeBC()
+        self.InitializeBC(t)
 
         # Predict the start value of current time step.
         self.Predict()
@@ -92,7 +92,7 @@ class GeneralizedAlphaSolver(PhysicsSolver):
             print('Solution does not converge at time step {}'.format(t))
 
 
-    def InitializeBC(self):
+    def InitializeBC(self, t):
         pass
 
     def Predict(self):
@@ -179,7 +179,9 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
     #     # TODO:: only update the boundary!
     #     self.du[:] = physicsSolver.du
 
-    def InitializeBC(self):
+    def InitializeBC(self, t):
+        # Update the inlet velocity first.
+        self.mesh.updateInletVelocity(t)
         # Combine the boundary condition at the start of each time step.
         for inlet in self.mesh.faces['inlet']:
             dofs = self.sparseInfo.GenerateDofs(inlet.appNodes, 3)

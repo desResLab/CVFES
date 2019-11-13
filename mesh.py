@@ -241,8 +241,9 @@ class FluidMesh(Mesh):
             # Calculate the inlet area used for calculating BC velocity.
             inletArea = 0.0
             for iElm, elm in enumerate(inletFace.elements):
-                numIncluding = np.sum(~np.isin(inlet[elm.nodes], intersectNodes))
-                inletArea += elm.area * numIncluding / 3.0
+                # numIncluding = np.sum(~np.isin(inlet[elm.nodes], intersectNodes))
+                # inletArea += elm.area * numIncluding / 3.0
+                inletArea += elm.area
             inletFace.inletArea = inletArea
 
         # Set the inlet to be appliable inlet glbNodeIds
@@ -258,16 +259,32 @@ class FluidMesh(Mesh):
 
     def setBoundaryCondtions(self, bdyCondConfig):
         # Set the inlet velocity BC.
-        for inletFace in self.faces['inlet']:
-            nInlet = len(inletFace.appNodes)
-            velocity = bdyCondConfig.inletVelocity / inletFace.inletArea
-            inletFace.inletVelocity = self.setCondition(velocity, 'velocity', n=nInlet, valueDof=2) # z-axis
+        if isinstance(bdyCondConfig.inletVelocity, str):
+            self.inletVelocity = bdyCondConfig.inletVelocity
+            # volumeVelocity = eval(self.inletVelocity, {'t':0.0})
+        else:
+            self.inletVelocity = None
+            # Set up the constant inlet velocity used for all time steps.
+            volumeVelocity = bdyCondConfig.inletVelocity
+            for inletFace in self.faces['inlet']:
+                nInlet = len(inletFace.appNodes)
+                velocity = volumeVelocity / inletFace.inletArea
+                inletFace.inletVelocity = self.setCondition(velocity, 'velocity', n=nInlet, valueDof=2) # z-axis
 
         # Set the outlet Natural BC.
         # TODO:: Find out how to Apply Natrual BC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         for outletFace in self.faces['outlet']:
             nOutlet = len(outletFace.glbNodeIds)
             outletFace.ouletH = self.setCondition(bdyCondConfig.outletH, 'h', n=nOutlet, dof=1)
+
+    def updateInletVelocity(self, t):
+        if self.inletVelocity is None:
+            return
+        volumeVelocity = eval(self.inletVelocity)
+        for inletFace in self.faces['inlet']:
+            nInlet = len(inletFace.appNodes)
+            velocity = volumeVelocity / inletFace.inletArea
+            inletFace.inletVelocity = self.setCondition(velocity, 'velocity', n=nInlet, valueDof=2) # z-axis
 
     def Save(self, filename, counter, u, stress, uname='velocity'):
         """ Save the stress result of elements at time t with stress tensor of dim.
