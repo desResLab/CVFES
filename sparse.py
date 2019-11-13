@@ -21,9 +21,11 @@ from shape import *
 from math import floor
 from math import cos, pi
 from scipy.sparse.linalg import spsolve, gmres, LinearOperator, spilu
-from scipy.sparse import csr_matrix, csc_matrix, diags
+from scipy.sparse import csr_matrix, csc_matrix, diags, save_npz
 # from sksparse.cholmod import cholesky
 from scipy import io
+
+import sys
 
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
@@ -102,7 +104,14 @@ class SparseInfo:
         # TODO:: change this to decomposition solver!!!!!
         # P = diags(1.0/A.diagonal(), 0, format="csr")
         # M_x = lambda x: spsolve(P, x)
-        P = spilu(A)
+        try:
+            P = spilu(A)
+        except:
+            print('Spilu error: ', sys.exc_info()[0])
+            # Save the singular matrix.
+            save_npz('singularLHS.npz', A)
+            sys.exit(0)
+
         M_x = lambda x: P.solve(x)
         M = LinearOperator((self.ndof, self.ndof), M_x)
         y, info = gmres(A, rhs.reshape(self.ndof), x0=x0, M=M)
