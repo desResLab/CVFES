@@ -562,3 +562,46 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
         #     for b in range(nPts):
         #         print np.asarray(lLHS[:,a,b])
 
+
+@cython.cdivision(True)
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def Scaling(long[::1] indptr, long[::1] indices,
+            double[:,:,::1] LHS, double[:,::1] RHS, double[:,::1] W):
+
+    cdef long nNodes = indptr.shape[0] - 1
+    cdef long i, j, k, a, b
+    cdef double w
+
+    # 1. Get W = diagLHS^(-1/2)
+    for i in range(nNodes):
+        # Search.
+        left = indptr[i]
+        right = indptr[i+1]
+        ptr = (left + right) / 2
+
+        while indices[ptr] != i:
+            if indices[ptr] > i:
+                right = ptr
+            else:
+                left = ptr
+            ptr = (left + right) / 2
+
+        for j in range(4):
+            w = LHS[ptr, j, j] if LHS[ptr, j, j] != 0.0 else 1.0
+            W[i, j] = 1.0 / sqrt(abs(w))
+
+    # 2. Scale LHS
+    # - Scale row, W*LHS
+    # - Scale column, LHS*W
+    for i in range(nNodes):
+        for j in range(indptr[i], indptr[i+1]):
+            k = indices[j]
+            for a in range(4):
+                for b in range(4):
+                    LHS[j, a, b] = LHS[j, a, b] * W[i, a] * W[k, b]
+
+    # 3. Scale RHS
+    for i in range(nNodes):
+        for a in range(4):
+            RHS[i, a] = RHS[i, a] * W[i, a]

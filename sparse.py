@@ -102,8 +102,11 @@ class SparseInfo:
         A = csr_matrix((flatLHS, indices, indptr), shape=(self.ndof, self.ndof), dtype=np.float64)
 
         # TODO:: change this to decomposition solver!!!!!
-        # P = diags(1.0/A.diagonal(), 0, format="csr")
+        # diagA = A.diagonal().copy()
+        # diagA[diagA==0.0] = 1.0
+        # P = diags(1.0/diagA, 0, format="csr")
         # M_x = lambda x: spsolve(P, x)
+
         try:
             P = spilu(A)
         except:

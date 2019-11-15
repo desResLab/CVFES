@@ -24,7 +24,9 @@ from timeit import default_timer as timer
 # TODO:: Debugging!!!!!!!!!!!!!!!!!!!!!
 
 # from assemble import Assemble, TestAssemble
-from optimizedFluidAssemble import OptimizedFluidAssemble, OptimizedFluidBoundaryAssemble
+from optimizedFluidAssemble import OptimizedFluidAssemble
+from optimizedFluidAssemble import OptimizedFluidBoundaryAssemble
+from optimizedFluidAssemble import Scaling
 import sys
 
 __author__ = "Xue Li"
@@ -136,6 +138,7 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         self.sparseInfo = SparseInfo(mesh, self.Dof)
         self.LHS = self.sparseInfo.New()
         self.RHS = np.zeros((self.mesh.nNodes, self.Dof))
+        self.W = np.empty((self.mesh.nNodes, self.Dof))
         # The delta values (result of sparse system) of each time step.
         self.up = None
 
@@ -278,13 +281,14 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         sstart = timer()
         # Only deals with one processor here!
         # TODO:: linear system solver on multiple processors and GPUs!!!!!!!!!!!!!
+
+        # Scaling before feed in sparse solver.
+        Scaling(self.sparseInfo.indptr, self.sparseInfo.indices, self.LHS, self.RHS, self.W):
         self.up = self.sparseInfo.Solve(self.LHS, -self.RHS, self.up)
-        udof = np.arange(self.sparseInfo.ndof).reshape(self.mesh.nNodes, self.Dof)[:,:3].reshape(self.mesh.ndof)
-        self.deltaDDu = self.up[udof]
-        # print "SolveLinearSystem", self.deltaDDu[1858*3:1858*3+3]
-        pdof = np.arange(self.sparseInfo.ndof).reshape(self.mesh.nNodes, self.Dof)[:,-1].reshape(self.mesh.nNodes)
-        self.deltaP = self.up[pdof]
-        # print "SolveLinearSystem", self.deltaP[1858]
+        # Scaling back x = Wy.
+        up = self.W * self.up.reshape(self.mesh.nNodes, self.Dof)
+        self.deltaDDu = up[:,:3].ravel()
+        self.deltaP = up[:,-1].ravel()
 
         send = timer()
         print('Solve linear system, time: %.1f ms' % ((send - sstart) * 1000.0))
