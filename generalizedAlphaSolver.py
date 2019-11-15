@@ -283,7 +283,7 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         # TODO:: linear system solver on multiple processors and GPUs!!!!!!!!!!!!!
 
         # Scaling before feed in sparse solver.
-        Scaling(self.sparseInfo.indptr, self.sparseInfo.indices, self.LHS, self.RHS, self.W):
+        Scaling(self.sparseInfo.indptr, self.sparseInfo.indices, self.LHS, self.RHS, self.W)
         self.up = self.sparseInfo.Solve(self.LHS, -self.RHS, self.up)
         # Scaling back x = Wy.
         up = self.W * self.up.reshape(self.mesh.nNodes, self.Dof)

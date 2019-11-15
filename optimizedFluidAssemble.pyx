@@ -570,7 +570,7 @@ def Scaling(long[::1] indptr, long[::1] indices,
             double[:,:,::1] LHS, double[:,::1] RHS, double[:,::1] W):
 
     cdef long nNodes = indptr.shape[0] - 1
-    cdef long i, j, k, a, b
+    cdef long i, j, k, a, b, ptr
     cdef double w
 
     # 1. Get W = diagLHS^(-1/2)
