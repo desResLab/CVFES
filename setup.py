@@ -4,6 +4,12 @@ from Cython.Build import cythonize
 
 ext_modules = [
     Extension(
+        "optimizedAssemble",
+        ["optimizedAssemble.pyx"],
+        extra_compile_args=['-fopenmp'],
+        extra_link_args=['-fopenmp'],
+    ),
+    Extension(
         "optimizedFluidAssemble",
         ["optimizedFluidAssemble.pyx"],
         extra_compile_args=['-fopenmp'],
