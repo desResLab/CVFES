@@ -24,7 +24,8 @@ from timeit import default_timer as timer
 # TODO:: Debugging!!!!!!!!!!!!!!!!!!!!!
 
 # from assemble import Assemble, TestAssemble
-from optimizedFluidAssemble import OptimizedFluidAssemble
+from optimizedAssemble import OptimizedFluidAssemble
+# from optimizedFluidAssemble import OptimizedFluidAssemble
 from optimizedFluidAssemble import OptimizedFluidBoundaryAssemble
 from optimizedFluidAssemble import Scaling
 import sys
@@ -297,7 +298,7 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
     def Correct(self):
         self.ddu = self.ddu + self.deltaDDu
         self.du = self.du + self.gamma * self.dt * self.deltaDDu
-        self.p = self.p + self.deltaP
+        self.p = self.p + self.alpha_f * self.gamma * self.dt * self.deltaP
 
         # print "Correct", self.du[1858*3:1858*3+3]
 
