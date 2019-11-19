@@ -14,11 +14,11 @@ cdef double eps = 2.220446049250313e-16
 # >>> sys.float_info.epsilon
 # 2.220446049250313e-16
 
-# @cython.boundscheck(False)
-# @cython.wraparound(False)
-# cdef int iszero(a):
-#     # cdef double eps = 2.220446049250313e-15
-#     return abs(a) < 10.0*eps*max(a, eps)
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef int iszero(a):
+    # cdef double eps = 2.220446049250313e-15
+    return abs(a) < 10.0*eps*max(a, eps)
 
 
 # jacobian = [[x[1]-x[0], x[2]-x[0], x[3]-x[0]],
@@ -354,9 +354,8 @@ def OptimizedFluidAssemble(double[:,::1] nodes, long[:,::1] elements,
             tauB = up[0]*(up[0]*G[0,0] + up[1]*G[0,1] + up[2]*G[0,2]) \
                  + up[1]*(up[0]*G[1,0] + up[1]*G[1,1] + up[2]*G[1,2]) \
                  + up[2]*(up[0]*G[2,0] + up[1]*G[2,1] + up[2]*G[2,2])
-            # if iszero(tauB):
-            #     tauB = eps
-            tauB = 1.0 / sqrt(tauB)
+            # tauB = 1.0 / sqrt(tauB)
+            tauB = eps if iszero(tauB) else 1.0 / sqrt(tauB)
 
             # u + up
             ua[0] = uh[0] + up[0]
