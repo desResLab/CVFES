@@ -9,4 +9,4 @@
 
 setenv OMP_NUM_THREADS 1
 
-python3 main.py -f cfg/input.cfg # Application to execute
+python3 main.py -f cfg/lcMesh.cfg # Application to execute

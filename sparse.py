@@ -107,13 +107,15 @@ class SparseInfo:
         # P = diags(1.0/diagA, 0, format="csr")
         # M_x = lambda x: spsolve(P, x)
 
-        try:
-            P = spilu(A)
-        except:
-            print('Spilu error: ', sys.exc_info()[0])
-            # Save the singular matrix.
-            save_npz('singularLHS.npz', A)
-            sys.exit(0)
+        P = spilu(A)
+
+        # try:
+        #     P = spilu(A)
+        # except:
+        #     print('Spilu error: ', sys.exc_info()[0])
+        #     # Save the singular matrix.
+        #     # save_npz('singularLHS.npz', A)
+        #     sys.exit(0)
 
         M_x = lambda x: P.solve(x)
         M = LinearOperator((self.ndof, self.ndof), M_x)
