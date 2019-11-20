@@ -235,7 +235,7 @@ class FluidMesh(Mesh):
         for inletFace in self.faces['inlet']:
             inlet = inletFace.glbNodeIds
             flags = np.isin(inlet, self.wall)
-            intersectNodes = inlet[flags]
+            # intersectNodes = inlet[flags]
             inletFace.appNodes = inlet[~flags]
 
             # Calculate the inlet area used for calculating BC velocity.
@@ -245,6 +245,13 @@ class FluidMesh(Mesh):
                 # inletArea += elm.area * numIncluding / 3.0
                 inletArea += elm.area
             inletFace.inletArea = inletArea
+
+            # Calculate the unit norm vector of this inlet.
+            elmNIds = inletFace.elementNodeIds
+            v = np.array([nodes[inlet[elmNIds[0,1]]] - nodes[inlet[elmNIds[0,0]]],
+                          nodes[inlet[elmNIds[0,2]]] - nodes[inlet[elmNIds[0,0]]]])
+            elmNormV = np.cross(v[0], v[1])
+            inletFace.normal = elmNormV / np.linalg.norm(elmNormV)
 
         # Set the inlet to be appliable inlet glbNodeIds
         self.inlet = np.array([il.appNodes for il in self.faces['inlet']]).ravel()
@@ -269,7 +276,7 @@ class FluidMesh(Mesh):
             for inletFace in self.faces['inlet']:
                 nInlet = len(inletFace.appNodes)
                 velocity = volumeVelocity / inletFace.inletArea
-                inletFace.inletVelocity = self.setCondition(velocity, 'velocity', n=nInlet, valueDof=2) # z-axis
+                inletFace.inletVelocity = self.setInletVelocity(nInlet, velocity, inletFace.normal) # z-axis
 
         # Set the outlet Natural BC.
         # TODO:: Find out how to Apply Natrual BC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -284,7 +291,10 @@ class FluidMesh(Mesh):
         for inletFace in self.faces['inlet']:
             nInlet = len(inletFace.appNodes)
             velocity = volumeVelocity / inletFace.inletArea
-            inletFace.inletVelocity = self.setCondition(velocity, 'velocity', n=nInlet, valueDof=2) # z-axis
+            inletFace.inletVelocity = self.setInletVelocity(nInlet, velocity, inletFace.normal) # z-axis
+
+    def setInletVelocity(self, nNodes, velocity, normal):
+        return (np.ones((nNodes, 3))*(velocity*normal)).ravel()
 
     def Save(self, filename, counter, u, stress, uname='velocity'):
         """ Save the stress result of elements at time t with stress tensor of dim.
