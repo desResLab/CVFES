@@ -247,6 +247,7 @@ class FluidMesh(Mesh):
             inletFace.inletArea = inletArea
 
             # Calculate the unit norm vector of this inlet.
+            nodes = self.nodes
             elmNIds = inletFace.elementNodeIds
             v = np.array([nodes[inlet[elmNIds[0,1]]] - nodes[inlet[elmNIds[0,0]]],
                           nodes[inlet[elmNIds[0,2]]] - nodes[inlet[elmNIds[0,0]]]])

@@ -99,7 +99,7 @@ class SparseInfo:
                 # Extend each submatrix.
                 flatLHS.extend(self.Flatten(lhs[self.indptr[iNode]:self.indptr[iNode+1]], jDof))
 
-        A = csr_matrix((flatLHS, indices, indptr), shape=(self.ndof, self.ndof), dtype=np.float64)
+        A = csr_matrix((flatLHS, indices, indptr), shape=(self.ndof, self.ndof), dtype=np.float64).tocsc()
 
         # TODO:: change this to decomposition solver!!!!!
         # diagA = A.diagonal().copy()

@@ -8,5 +8,6 @@
 ##$ -t 1-9:2	         # Specify number of tasks in array
 
 setenv OMP_NUM_THREADS 1
+fsync $SGE_STDOUT_PATH &
 
 python3 main.py -f cfg/lcMesh.cfg # Application to execute
