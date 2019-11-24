@@ -86,7 +86,7 @@ class SparseInfo:
 
             rhs[nodeA,dof] = value
 
-    def Solve(self, lhs, rhs, x0=None):
+    def Solve(self, lhs, rhs, x0=None, P=None):
         indptr = [0]
         indices = []
         flatLHS = []
@@ -107,7 +107,8 @@ class SparseInfo:
         # P = diags(1.0/diagA, 0, format="csr")
         # M_x = lambda x: spsolve(P, x)
 
-        P = spilu(A)
+        if P is None:
+            P = spilu(A)
 
         # try:
         #     P = spilu(A)
