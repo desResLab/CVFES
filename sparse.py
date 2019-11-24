@@ -86,7 +86,7 @@ class SparseInfo:
 
             rhs[nodeA,dof] = value
 
-    def Solve(self, lhs, rhs, x0=None, P=None):
+    def Solve(self, lhs, rhs, x0=None):
         indptr = [0]
         indices = []
         flatLHS = []
@@ -107,8 +107,7 @@ class SparseInfo:
         # P = diags(1.0/diagA, 0, format="csr")
         # M_x = lambda x: spsolve(P, x)
 
-        if P is None:
-            P = spilu(A)
+        P = spilu(A)
 
         # try:
         #     P = spilu(A)
@@ -126,7 +125,7 @@ class SparseInfo:
         # y = np.zeros(self.ndof)
 
         # print "Sparse Solve", y[1858*4:1858*4+4]
-        return y
+        return y, P
 
     def MultiplyByVector(self, sparseM, vec):
         """ M dot vec """

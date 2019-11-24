@@ -194,7 +194,6 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
         dofs = self.sparseInfo.GenerateDofs(self.mesh.wall, 3)
         self.du[dofs] = 0.0
 
-
     def Predict(self):
         # Reset the previous context to current one to start a new loop.
         # The xP represent previous value.
@@ -214,10 +213,6 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
         self.interDDu = (1-self.alpha_m)*self.dduP + self.alpha_m*self.ddu
         self.interDu = (1-self.alpha_f)*self.duP + self.alpha_f*self.du
-
-        # Preconditioner used for the whole time step.
-        self.preconditioner = None
-
 
     def OptimizedAssemble(self):
 
@@ -288,7 +283,7 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
         # Scaling before feed in sparse solver.
         Scaling(self.sparseInfo.indptr, self.sparseInfo.indices, self.LHS, self.RHS, self.W)
-        self.up = self.sparseInfo.Solve(self.LHS, -self.RHS, self.up, self.preconditioner)
+        self.up = self.sparseInfo.Solve(self.LHS, -self.RHS, self.up)
         # Scaling back x = Wy.
         up = self.W * self.up.reshape(self.mesh.nNodes, self.Dof)
         self.deltaDDu = up[:,:3].ravel()
