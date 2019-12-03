@@ -268,8 +268,11 @@ class FluidMesh(Mesh):
     def setBoundaryCondtions(self, bdyCondConfig):
         # Set the inlet velocity BC.
         if isinstance(bdyCondConfig.inletVelocity, str):
-            self.inletVelocity = bdyCondConfig.inletVelocity
-            # volumeVelocity = eval(self.inletVelocity, {'t':0.0})
+            if bdyCondConfig.inletVelocity.endswith('.flow'):
+                self.inletVelocity = np.loadtxt(bdyCondConfig.inletVelocity)
+            else:
+                self.inletVelocity = bdyCondConfig.inletVelocity
+                # volumeVelocity = eval(self.inletVelocity, {'t':0.0})
         else:
             self.inletVelocity = None
             # Set up the constant inlet velocity used for all time steps.
@@ -288,7 +291,11 @@ class FluidMesh(Mesh):
     def updateInletVelocity(self, t):
         if self.inletVelocity is None:
             return
-        volumeVelocity = eval(self.inletVelocity)
+
+        if isinstance(self.inletVelocity, np.ndarray):
+            volumeVelocity = self.inletVelocity[self.inletVelocity[:,0]==t, 1]
+        else:
+            volumeVelocity = eval(self.inletVelocity)
         for inletFace in self.faces['inlet']:
             nInlet = len(inletFace.appNodes)
             velocity = volumeVelocity / inletFace.inletArea
