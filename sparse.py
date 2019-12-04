@@ -125,7 +125,7 @@ class SparseInfo:
         # y = np.zeros(self.ndof)
 
         # print "Sparse Solve", y[1858*4:1858*4+4]
-        return y, P
+        return y
 
     def MultiplyByVector(self, sparseM, vec):
         """ M dot vec """
