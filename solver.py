@@ -71,6 +71,9 @@ class TransientSolver(Solver):
         self.restartFilename = config.restartFilename
         self.restartTimestep = config.restartTimestep
 
+        # Remember pressure of dofs to be saved for solid/wall part.
+        self.wallGlbNodeIds = np.where(np.in1d(meshes['lumen'].glbNodeIds, meshes['wall'].glbNodeIds))[0]
+
         # Calculate the pressure applied for solid part.
         self.t = np.append(np.arange(self.endtime, step=self.dt), self.endtime)
 
@@ -108,6 +111,8 @@ class TransientSolver(Solver):
             dt = self.t[timeStep+1] - self.t[timeStep]
             # Solve for the fluid part.
             self.fluidSolver.Solve(t, dt)
+            # TODO:: Remember to delete after combining the solid and fluid part.
+            np.save('sparse_wallpressure_{}'.format(timeStep), self.fluidSolver.p[self.wallGlbNodeIds])
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
             # TODO:: Remeber to change this when combining the solid and fluid part together.
