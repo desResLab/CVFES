@@ -21,6 +21,8 @@ from physicsSolver import *
 from physicsSolverGPUs import *
 from generalizedAlphaSolver import *
 # from generalizedAlphaSolverRe import *
+from bdyStressExport import BdyStressExport
+
 # from math import floor
 # from math import cos, pi
 import math
@@ -71,9 +73,8 @@ class TransientSolver(Solver):
         self.restartFilename = config.restartFilename
         self.restartTimestep = config.restartTimestep
 
-        # Remember pressure of dofs to be saved for solid/wall part.
-        self.wallGlbNodeIds = np.where(np.in1d(meshes['lumen'].glbNodeIds, meshes['wall'].glbNodeIds))[0]
-
+        # Initialize things for export wall stresses.
+        self.initBdyStressExport(meshes)
         # Calculate the pressure applied for solid part.
         self.t = np.append(np.arange(self.endtime, step=self.dt), self.endtime)
 
@@ -90,6 +91,33 @@ class TransientSolver(Solver):
 
         # Init the solver which is inside of the time loop.
         self.__initPhysicSolver__(comm, meshes, config)
+
+    def initBdyStressExport(self, meshes):
+        lumenGlbNodeIds = meshes['lumen'].glbNodeIds
+        lumenElements = meshes['lumen'].elements
+        nLumenElements = meshes['lumen'].nElements
+        wallGlbNodeIds = meshes['wall'].glbNodeIds
+        nWallNodes = meshes['wall'].nNodes
+
+        # Remember pressure of dofs to be saved for solid/wall part.
+        sorter = np.argsort(lumenGlbNodeIds)
+        self.wallGlbNodeIds = sorter[np.searchsorted(lumenGlbNodeIds, wallGlbNodeIds, sorter=sorter)]
+
+        maskLumenElms = np.empty(nLumenElements, dtype=bool)
+        self.elmWallIndices = [[] for _ in range(nLumenElements)]
+        for iElm in range(nLumenElements):
+            mask = np.where(np.isin(self.wallGlbNodeIds, lumenElements[iElm]))[0]
+            self.elmWallIndices[iElm].extend(mask)
+            maskLumenElms[iElm] = True if mask else False
+
+        self.elmCnnWall = lumenElements[maskLumenElms]
+        self.elmWallIndices = np.array(self.elmWallIndices[maskLumenElms])
+
+        self.wallStress = np.zeros((nWallNodes, 3), dtype=np.float)
+
+        # Things need to remember.
+        self.lumenNodes = meshes['lumen'].nodes
+        self.wallElements = meshes['wall'].elements
 
 
     def __initPhysicSolver__(self, comm, meshes, config):
@@ -112,7 +140,12 @@ class TransientSolver(Solver):
             # Solve for the fluid part.
             self.fluidSolver.Solve(t, dt)
             # TODO:: Remember to delete after combining the solid and fluid part.
-            np.save('sparse_wallpressure_{}'.format(timeStep), self.fluidSolver.p[self.wallGlbNodeIds])
+            BdyStressExport(self.lumenNodes, self.elmCnnWall, self.elmWallIndices,
+                            self.wallElements, self.wallGlbNodeIds, self.fluidSolver.du,
+                            self.fluidSolver.p, self.fluidSolver.lDN, self.wallStress)
+
+            np.save('Examples/lc/Results/sparse_wallpressure_{}'.format(timeStep), self.wallStress)
+
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
             # TODO:: Remeber to change this when combining the solid and fluid part together.

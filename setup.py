@@ -20,6 +20,10 @@ ext_modules = [
         ["optimizedSolidAssemble.pyx"],
         extra_compile_args=['-fopenmp'],
         extra_link_args=['-fopenmp'],
+    ),
+    Extension(
+        "bdyStressExport",
+        ["bdyStressExport.pyx"],
     )
 ]
 
