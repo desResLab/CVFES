@@ -123,8 +123,8 @@ cdef void getSurfaceNormal(double[:,::1] nodes, long[::1] eNIds, long[::1] wallG
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def BdyStressExport(double[:,::1] nodes, long[:,::1] elements, long[:,::1] elmWallIndices,
-                    long[:,::1] wallElements, long[::1] wallGlbNodeIds,
+def BdyStressExport(double[:,::1] nodes, long[:,::1] elements, long[::1] elmWallIndicesPtr,
+                    long[::1] elmWallIndices, long[:,::1] wallElements, long[::1] wallGlbNodeIds,
                     double[:,::1] interU, double[::1] p,
                     double[:,::1] lDN, double[:,::1] wallStress):
 
@@ -183,18 +183,19 @@ def BdyStressExport(double[:,::1] nodes, long[:,::1] elements, long[:,::1] elmWa
         gradUh[2,2] = interU[eNIds[0],2]*DN[2,0] + interU[eNIds[1],2]*DN[2,1] \
                         + interU[eNIds[2],2]*DN[2,2] + interU[eNIds[3],2]*DN[2,3]
 
-        for a in elmWallIndices[iElm]:
-            nWallStressCmpnt[a] += 1.0
+        for a in range(elmWallIndicesPtr[iElm], elmWallIndicesPtr[iElm+1]):
+            nodeId = elmWallIndices[a]
+            nWallStressCmpnt[nodeId] += 1.0
             for i in range(3):
                 for j in range(3):
-                    wallStressTensor[a,i,j] += gradUh[i,j] + gradUh[j,i]
+                    wallStressTensor[nodeId,i,j] += gradUh[i,j] + gradUh[j,i]
 
     # sigma = 1/3*mu*sigma - p*I
     for iNode in range(nWallNodes):
         for i in range(3):
             for j in range(3):
-                wallStressTensor[iNode,i,j] = mu * wallStressTensor[iNode,i,j] / nWallStressCmpnt[iNode]
-            wallStressTensor[iNode,i,i] -= p[iNode]
+                wallStressTensor[iNode,i,j] = -mu * wallStressTensor[iNode,i,j] / nWallStressCmpnt[iNode]
+            wallStressTensor[iNode,i,i] += p[iNode]
 
     # n
     for iElm in range(nWallElms):

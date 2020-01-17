@@ -26,6 +26,7 @@ from bdyStressExport import BdyStressExport
 # from math import floor
 # from math import cos, pi
 import math
+import sys
 
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
@@ -94,7 +95,7 @@ class TransientSolver(Solver):
 
     def initBdyStressExport(self, meshes):
         lumenGlbNodeIds = meshes['lumen'].glbNodeIds
-        lumenElements = meshes['lumen'].elements
+        lumenElements = meshes['lumen'].elementNodeIds
         nLumenElements = meshes['lumen'].nElements
         wallGlbNodeIds = meshes['wall'].glbNodeIds
         nWallNodes = meshes['wall'].nNodes
@@ -103,21 +104,27 @@ class TransientSolver(Solver):
         sorter = np.argsort(lumenGlbNodeIds)
         self.wallGlbNodeIds = sorter[np.searchsorted(lumenGlbNodeIds, wallGlbNodeIds, sorter=sorter)]
 
-        maskLumenElms = np.empty(nLumenElements, dtype=bool)
-        self.elmWallIndices = [[] for _ in range(nLumenElements)]
+        maskLumenElms = np.full(nLumenElements, False)
+        elmWallIndicesCounter = 0
+        self.elmWallIndicesPtr = [0]
+        self.elmWallIndices = []
         for iElm in range(nLumenElements):
-            mask = np.where(np.isin(self.wallGlbNodeIds, lumenElements[iElm]))[0]
-            self.elmWallIndices[iElm].extend(mask)
-            maskLumenElms[iElm] = True if mask else False
+            mask = np.where(np.in1d(self.wallGlbNodeIds, lumenElements[iElm]))[0]
+            if len(mask)>0:
+                elmWallIndicesCounter += len(mask)
+                self.elmWallIndicesPtr.append(elmWallIndicesCounter)
+                self.elmWallIndices.extend(mask)
+                maskLumenElms[iElm] = True
 
         self.elmCnnWall = lumenElements[maskLumenElms]
-        self.elmWallIndices = np.array(self.elmWallIndices[maskLumenElms])
+        self.elmWallIndicesPtr = np.array(self.elmWallIndicesPtr, dtype=int)
+        self.elmWallIndices = np.array(self.elmWallIndices, dtype=int)
 
         self.wallStress = np.zeros((nWallNodes, 3), dtype=np.float)
 
         # Things need to remember.
         self.lumenNodes = meshes['lumen'].nodes
-        self.wallElements = meshes['wall'].elements
+        self.wallElements = meshes['wall'].elementNodeIds
 
 
     def __initPhysicSolver__(self, comm, meshes, config):
@@ -140,11 +147,14 @@ class TransientSolver(Solver):
             # Solve for the fluid part.
             self.fluidSolver.Solve(t, dt)
             # TODO:: Remember to delete after combining the solid and fluid part.
-            BdyStressExport(self.lumenNodes, self.elmCnnWall, self.elmWallIndices,
-                            self.wallElements, self.wallGlbNodeIds, self.fluidSolver.du,
+
+            BdyStressExport(self.lumenNodes, self.elmCnnWall, self.elmWallIndicesPtr,
+                            self.elmWallIndices, self.wallElements, self.wallGlbNodeIds,
+                            self.fluidSolver.du.reshape(self.fluidSolver.mesh.nNodes, 3),
                             self.fluidSolver.p, self.fluidSolver.lDN, self.wallStress)
 
             np.save('Examples/lc/Results/sparse_wallpressure_{}'.format(timeStep), self.wallStress)
+            # sys.exit()
 
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
