@@ -12,4 +12,4 @@
 module load python
 module load cuda
 
-mpiexec -n $NSLOTS python3 -m mpi4py main.py -f cfg/input.cfg
+mpiexec -n $NSLOTS python3 -m mpi4py main.py -f cfg/lcSparse.cfg

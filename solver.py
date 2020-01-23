@@ -132,9 +132,9 @@ class TransientSolver(Solver):
         if int(t/dt_f) > self.nt:
             self.nt += 1
             self.strac = self.etrac
-            self.etrac = np.load('Examples/lc/Results/sparse_wallpressure_{}.npy'.format(nt))
+            self.etrac = np.load('Examples/lc/Results/sparse_wallpressure_{}.npy'.format(self.nt))
 
-        traction = self.strac + (t - nt*dt_f)*(self.etrac - self.strac)/dt_f
+        traction = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
         return traction
 
 
@@ -156,7 +156,7 @@ class TransientSolver(Solver):
         # Prepare the traction to be applied for solid part.
         self.nt = 0
         self.strac = np.zeros_like(self.wallStress, dtype=np.float)
-        self.etrac = np.load('Examples/lc/Results/sparse_wallpressure_{}.npy'.format(nt))
+        self.etrac = np.load('Examples/lc/Results/sparse_wallpressure_{}.npy'.format(self.nt))
 
         for timeStep in range(self.restartTimestep, self.nTimeSteps):
             t = self.t[timeStep]

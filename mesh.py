@@ -388,7 +388,7 @@ class SolidMesh(Mesh):
             filename = '{}{}{}'.format(filename, rho, fileExtension)
 
             # Read from file directly, if file does not exist, report error and exit!
-            if os.path.exists(propfilename):
+            if os.path.exists(filename):
                 prop = np.load(filename)
             else:
                 print('Solid mesh, load random fields failed: File \'{}\' does not exist!'.format(filename))
@@ -413,7 +413,11 @@ class SolidMesh(Mesh):
     def processFaces(self):
         # Prepare the boundary indices for use directly.
         # self.boundary = np.append(self.faces['inlet'].glbNodeIds, self.faces['outlet'].glbNodeIds)
-        self.boundary = np.array([bdy.glbNodeIds for bdy in self.faces['boundaries']]).ravel()
+        # self.boundary = np.array([bdy.glbNodeIds for bdy in self.faces['boundaries']]).ravel()
+        boundary = []
+        for bdy in self.faces['boundaries']:
+            boundary.extend(bdy.glbNodeIds)
+        self.boundary = np.array(boundary)
 
     def setInitialConditions(self, iniCondConfig):
         # Set the velocity

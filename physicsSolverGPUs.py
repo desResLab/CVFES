@@ -144,6 +144,7 @@ class GPUSolidSolver(PhysicsSolver):
         self.Ku_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         self.P_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
 
+        map_flags = cl.map_flags
         self.appTrac_buf = cl.Buffer(self.context, mem_flags.READ_ONLY, int(self.nNodes*24))
         self.pinned_appTrac = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.nNodes*24))
         self.appTrac, _eventAppTrac = cl.enqueue_map_buffer(self.queue, self.pinned_appTrac, map_flags.WRITE, 0,
@@ -205,7 +206,6 @@ class GPUSolidSolver(PhysicsSolver):
         self.pinned_up = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, self.LM.nbytes)
         self.pinned_stress = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.nElms*self.nSmp*40))
         # Map to CPU.
-        map_flags = cl.map_flags
         self.srcURes, _eventSrcURes = cl.enqueue_map_buffer(self.queue, self.pinned_ures, map_flags.WRITE | map_flags.READ, 0,
                                                             self.LM.shape, self.LM.dtype)
         self.srcU, _eventSrcU = cl.enqueue_map_buffer(self.queue, self.pinned_u, map_flags.WRITE | map_flags.READ, 0,

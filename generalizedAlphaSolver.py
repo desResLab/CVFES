@@ -320,7 +320,7 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
 
         self.beta = 0.25 * (1 + self.alpha_f - self.alpha_m)**2
 
-    def ApplyPressure(self, appTraction):
+    def ApplyTraction(self, appTraction):
         pass
 
     # def RefreshContext(self, physicSolver):
