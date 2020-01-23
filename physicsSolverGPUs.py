@@ -47,16 +47,15 @@ class GPUSolidSolver(PhysicsSolver):
         if self.InitializeGPU() < 0:
             exit(-1)
 
-        # Initialize the context.
-        self.du = mesh.iniDu # velocity
-        self.u = mesh.iniU # displacement
-        self.appTraction = 0.0
-
         # Initialize the number of samples.
         self.nSmp = config.nSmp
         self.ndof = mesh.ndof
         self.nElms = mesh.nElements
         self.nNodes = mesh.nNodes
+
+        # Initialize the context.
+        self.du = mesh.iniDu # velocity
+        self.u = mesh.iniU # displacement
 
         # Calculate u_{-1} to start of the time looping.
         # u_-1 = u_0 - dt*du_0 + 0.5*dt**2*ddu_0
@@ -145,14 +144,20 @@ class GPUSolidSolver(PhysicsSolver):
         self.Ku_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         self.P_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
 
+        self.appTrac_buf = cl.Buffer(self.context, mem_flags.READ_ONLY, int(self.nNodes*24))
+        self.pinned_appTrac = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.nNodes*24))
+        self.appTrac, _eventAppTrac = cl.enqueue_map_buffer(self.queue, self.pinned_appTrac, map_flags.WRITE, 0,
+                                                            (self.nNodes, 3), self.LM.dtype)
+        self.appTrac[:,:] = np.zeros((self.nNodes, 3))
+        prep_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
 
         # 'Assemble' the inital M (mass) and Ku (stiffness) 'matrices'.
         # Kernel.
-        initial_assemble_events = []
+        initial_assemble_events = [prep_appTrac_event]
         for iColorGroup in range(len(self.colorGps_buf)):
             initial_assemble_event = \
             self.program.assemble_K_M_P(self.queue, (len(self.mesh.colorGroups[iColorGroup]),), (1,),
-                                        np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.appTraction),
+                                        np.int64(self.nNodes), np.int64(self.nSmp), self.appTrac_buf,
                                         self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGroup], thickness_buf,
                                         self.elmTE_buf, u_buf, self.Ku_buf, self.LM_buf, self.P_buf,
                                         wait_for=initial_assemble_events)
@@ -218,8 +223,8 @@ class GPUSolidSolver(PhysicsSolver):
         prep_up_event = cl.enqueue_copy(self.queue, self.up_buf, self.srcUP)
 
 
-    def ApplyPressure(self, appTraction):
-        self.appTraction = appTraction
+    def ApplyTraction(self, appTraction):
+        self.appTrac[:,:] = appTraction
 
 
     def Solve(self, t, dt):
@@ -228,13 +233,14 @@ class GPUSolidSolver(PhysicsSolver):
         cl.enqueue_fill_buffer(self.queue, self.P_buf, np.float64(0.0), 0, self.LM.nbytes)
 
         update_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
+        update_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
 
-        calc_Ku_events = [update_u_event]
+        calc_Ku_events = [update_u_event, update_appTrac_event]
         for iColorGrp in range(len(self.colorGps_buf)):
             calc_Ku_event = \
             self.program.assemble_K_P(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
                                       np.int64(len(self.mesh.colorGroups[iColorGrp])),
-                                      np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.appTraction),
+                                      np.int64(self.nNodes), np.int64(self.nSmp), self.appTrac_buf,
                                       self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGrp],
                                       self.elmTE_buf, self.u_buf, self.Ku_buf, self.P_buf,
                                       wait_for=calc_Ku_events)

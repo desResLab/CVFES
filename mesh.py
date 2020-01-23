@@ -374,30 +374,38 @@ class SolidMesh(Mesh):
 
     def readProperties(self, mu, sigma, rho, propfilename, geofilename, regenerate=False):
         ''' Generate Gaussian Markov Random Fields for properties. '''
-
-        # if propfilename is None:
-        #     prop = np.full((self.nNodes, self.nSmp), mu)
-
-        # else:
-        #     filename, fileExtension = os.path.splitext(propfilename)
-        #     filename = '{}{}_{}{}'.format(filename, self.nSmp, rho, fileExtension)
-
-        #     if (not regenerate) and os.path.exists(propfilename): # if the file exists just read it from file.
-        #         prop = np.load(filename)
-
-        #     else: # if not, create the random fields and write them to files.
-        #         if self.rank == 0:
-        #             prop = GMRF(geofilename, mu=mu, sigma=sigma, rho=rho, samplenum=self.nSmp, resfilename=filename)
-        #         self.comm.Barrier()
-
-        #         if self.rank != 0:
-        #             prop = np.load(filename)
-        #         self.comm.Barrier()
-
-        prop = np.full((self.nNodes, self.nSmp), mu)
-
+        # # Used for test, create with constant directly.
+        # prop = np.full((self.nNodes, self.nSmp), mu)
         # filename, fileExtension = os.path.splitext(propfilename)
         # prop = np.load('{}{}{}'.format(filename, rho, fileExtension))
+
+
+        if propfilename is None:
+            prop = np.full((self.nNodes, self.nSmp), mu)
+
+        else:
+            filename, fileExtension = os.path.splitext(propfilename)
+            filename = '{}{}{}'.format(filename, rho, fileExtension)
+
+            # Read from file directly, if file does not exist, report error and exit!
+            if os.path.exists(propfilename):
+                prop = np.load(filename)
+            else:
+                print('Solid mesh, load random fields failed: File \'{}\' does not exist!'.format(filename))
+                sys.exit()
+
+            # # Use GMRF to generate the random fields.
+            # if (not regenerate) and os.path.exists(propfilename): # if the file exists just read it from file.
+            #     prop = np.load(filename)
+
+            # else: # if not, create the random fields and write them to files.
+            #     if self.rank == 0:
+            #         prop = GMRF(geofilename, mu=mu, sigma=sigma, rho=rho, samplenum=self.nSmp, resfilename=filename)
+            #     self.comm.Barrier()
+
+            #     if self.rank != 0:
+            #         prop = np.load(filename)
+            #     self.comm.Barrier()
 
         return prop
 

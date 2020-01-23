@@ -26,7 +26,7 @@ void TtKT(const double *T, const double *K,
  */
 
 __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
-                             const double traction, const __global double *pVals,
+                             const __global double *traction, const __global double *pVals,
                              const __global double *nodes, const __global long *elmNodeIds,
                              const __global double *thickness, const __global double *elmThicknessE,
                              const __global double *u, __global double *Ku,
@@ -117,11 +117,6 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
     lB[4] = lNodes[1] - lNodes[3]; // y12: y1 - y2
     lB[5] = lNodes[2] - lNodes[0]; // x21: x2 - x1
 
-    // -- Compute the component for force vector. --
-    tmpVec[0] = traction*area/3.0 * T[6];
-    tmpVec[1] = traction*area/3.0 * T[7];
-    tmpVec[2] = traction*area/3.0 * T[8];
-
 
     for (uint iSmp = 0; iSmp < nSmp; iSmp++)
     {
@@ -170,9 +165,9 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
             }
 
             // 'Assemble' the force vector.
-            sP[nodeIds[i]*3*nSmp] += tmpVec[0];
-            sP[(nodeIds[i]*3+1)*nSmp] += tmpVec[1];
-            sP[(nodeIds[i]*3+2)*nSmp] += tmpVec[2];
+            sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3]*area/3.0;
+            sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1]*area/3.0;
+            sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2]*area/3.0;
         }
 
 
@@ -237,7 +232,7 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
  */
 
 __kernel void assemble_K_P(const long nElms, const long nNodes, const long nSmp,
-                           const double traction, const __global double *pVals,
+                           const __global double *traction, const __global double *pVals,
                            const __global double *nodes, const __global long *elmNodeIds,
                            const __global double *elmThicknessE,
                            const __global double *u, __global double *Ku, __global double *P)
@@ -343,11 +338,6 @@ __kernel void assemble_K_P(const long nElms, const long nNodes, const long nSmp,
             lB[4] = lNodes[1] - lNodes[3]; // y12: y1 - y2
             lB[5] = lNodes[2] - lNodes[0]; // x21: x2 - x1
 
-            // -- Compute the component for force vector. --
-            tmpVec[0] = traction*area/3.0 * T[6];
-            tmpVec[1] = traction*area/3.0 * T[7];
-            tmpVec[2] = traction*area/3.0 * T[8];
-
             // Loop through the nodes and "assemble" K
             // 5. Compute local K (stiffness) matrix.
             tmpVal = elmThicknessE[iElm*nSmp+iSmp]/(4.0*area*pE[3]);
@@ -395,9 +385,9 @@ __kernel void assemble_K_P(const long nElms, const long nNodes, const long nSmp,
                 }
 
                 // 'Assemble' the force vector.
-                sP[nodeIds[i]*3*nSmp] += tmpVec[0];
-                sP[(nodeIds[i]*3+1)*nSmp] += tmpVec[1];
-                sP[(nodeIds[i]*3+2)*nSmp] += tmpVec[2];
+                sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3]*area/3.0;;
+                sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1]*area/3.0;
+                sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2]*area/3.0;
             }
         }
     }

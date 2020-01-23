@@ -4,17 +4,21 @@ from vtk.util.numpy_support import numpy_to_vtk
 from sksparse.cholmod import cholesky
 from scipy.sparse import csc_matrix, diags, issparse, linalg as sla
 from scipy.special import gamma
-from math import pi
+from math import pi, sqrt
 import numpy as np
 import vtk
 import timeit
 import matplotlib.pyplot as plt
 from scipy.special import kv
 
+gdim = 2.0
+gnu = 2.0
+
 def matern_covariance(d, nu=1.0, k=1.0):
-    var = gamma(nu) / (gamma(nu+1.0) * ((4*pi)**1.0) * k**(2*nu))
+    var = gamma(nu) / (gamma(nu+gdim/2.0) * ((4*pi)**(gdim/2.0)) * k**(2*nu))
     # print var
     cov = 1.0 / (gamma(nu)*(2**(nu-1.0))) * ((k*d)**nu) * kv(nu,k*d)
+    # cov = var / (gamma(nu)*(2**(nu-1.0))) * ((k*d)**nu) * kv(nu,k*d)
     # print cov
     return cov
 
@@ -23,7 +27,7 @@ def check_correlation(X, npNodes, k):
     corX = np.corrcoef(X)
     distance = np.sqrt(np.sum((npNodes[ptsidx] - npNodes[0]) ** 2, axis=1))
     plt.plot(distance, corX[0, ptsidx], 'bo', markersize=3.0, label='generation')
-    plt.plot(distance, matern_covariance(distance, nu=2.0, k=k), 'ro', markersize=3.0, label='Matern') # nu=0.5 for 3-dim, 1.0 for 2-dim
+    plt.plot(distance, matern_covariance(distance, nu=gnu, k=k), 'ro', markersize=3.0, label='Matern') # nu=0.5 for 3-dim, 1.0 for 2-dim
     plt.ylabel('Correlation',fontsize=17)
     plt.xlabel('Distance',fontsize=17)
     plt.tick_params(axis='both', which='major', labelsize=17)
@@ -44,215 +48,220 @@ def check_variance(X, dim, nu, k):
 def loc(indptr, indices, i, j):
     return indptr[i] + np.where(indices[indptr[i]:indptr[i+1]]==j)[0]
 
-def GMRF(filename, mu=0.0, sigma=1.0, rho=3.7, samplenum=100, resfilename=None):
 
-    # kappa = 7.0
-    # nu = 1.0
-    # kappa = 0.8
-    nu = 2.0
-    dim = 2.0
+class GMRF:
 
-    # kappa = (gamma(nu)/(gamma(nu+1.0)*(4.0*pi)*(sigma**2.0))) **(1.0/(2.0*nu))
-    # print('kappa {}'.format(kappa))
-    # print('covariance distance {}'.format((8.0*nu)**0.5 / kappa))
+    def __init__(self, filename, dim=2.0, nu=2.0, rho=0.95):
 
-    kappa = ((8.0*nu)**0.5)/rho
-    sigmaOrigin = (gamma(nu)/(gamma(nu+1.0)*(4.0*pi)*(kappa**(2.0*nu))))**0.5
-    sigmaRatio = sigma/sigmaOrigin
+        kappa = ((8.0*nu)**0.5)/rho
 
-    # start_time = timeit.default_timer()
+        # start_time = timeit.default_timer()
+        # Read triangulation from file.
+        # print 'Reading File...'
+        reader = vtk.vtkXMLPolyDataReader()
+        reader.SetFileName(filename)
+        reader.Update()
+        polyDataModel = reader.GetOutput()
 
-    # Read triangulation from file.
-    # print 'Reading File...'
-    reader = vtk.vtkXMLPolyDataReader()
-    reader.SetFileName(filename)
-    reader.Update()
-    polyDataModel = reader.GetOutput()
+        totalNodes = polyDataModel.GetNumberOfPoints()
+        vtkNodes = polyDataModel.GetPoints().GetData()
+        npNodes = vtk_to_numpy(vtkNodes)
+        # print(vtkPointData)
+        # print(npNodes)
 
-    totalNodes = polyDataModel.GetNumberOfPoints()
-    vtkNodes = polyDataModel.GetPoints().GetData()
-    npNodes = vtk_to_numpy(vtkNodes)
-    # print(vtkPointData)
-    # print(npNodes)
+        # print 'Total nodes: ', totalNodes
+        # print timeit.default_timer() - start_time
+        # start_time = timeit.default_timer()
+        # print 'Building Topology...'
+        totalElms = polyDataModel.GetNumberOfCells()
+        # Get cells from source file.
+        npElms = np.zeros((totalElms, 3), dtype=int)
+        npEdges = np.zeros((totalElms, 3, 3))
+        npAreas = np.zeros(totalElms)
+        for icell in range(totalElms):
+            cell = polyDataModel.GetCell(icell)
+            numpts = cell.GetNumberOfPoints()
+            for ipt in range(numpts):
+                npElms[icell, ipt] = cell.GetPointId(ipt)
+            npEdges[icell, 0] = npNodes[npElms[icell, 2]] - npNodes[npElms[icell, 1]]
+            npEdges[icell, 1] = npNodes[npElms[icell, 0]] - npNodes[npElms[icell, 2]]
+            npEdges[icell, 2] = npNodes[npElms[icell, 1]] - npNodes[npElms[icell, 0]]
+            npAreas[icell] = cell.ComputeArea()
+            # for iedge in range(numedges):
+            #   edge = cell.GetEdge(iedge)
 
-    # print 'Total nodes: ', totalNodes
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Building Topology...'
-    totalElms = polyDataModel.GetNumberOfCells()
-    # Get cells from source file.
-    npElms = np.zeros((totalElms, 3), dtype=int)
-    npEdges = np.zeros((totalElms, 3, 3))
-    npAreas = np.zeros(totalElms)
-    for icell in range(totalElms):
-        cell = polyDataModel.GetCell(icell)
-        numpts = cell.GetNumberOfPoints()
-        for ipt in range(numpts):
-            npElms[icell, ipt] = cell.GetPointId(ipt)
-        npEdges[icell, 0] = npNodes[npElms[icell, 2]] - npNodes[npElms[icell, 1]]
-        npEdges[icell, 1] = npNodes[npElms[icell, 0]] - npNodes[npElms[icell, 2]]
-        npEdges[icell, 2] = npNodes[npElms[icell, 1]] - npNodes[npElms[icell, 0]]
-        npAreas[icell] = cell.ComputeArea()
-        # for iedge in range(numedges):
-        #   edge = cell.GetEdge(iedge)
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Creating the sparse matrix...'
-    # Create sparse data structure.
-    sparseInfo = [[] for _ in range(totalNodes)]
-    for icell in range(totalElms):
-        for inode in npElms[icell]:
-            # [sparseInfo[inode].extend([pt]) for pt in npElms[icell] if pt not in sparseInfo[inode]]
-            sparseInfo[inode].extend(npElms[icell])
-    sparseInfo = np.array(sparseInfo)
-    for knodes in range(totalNodes):
-        sparseInfo[knodes] = np.unique(sparseInfo[knodes])
-    # print(sparseInfo)
-
-    # Generate the sparse matrix.
-    indptr = [0]
-    indices = []
-    for inode in range(totalNodes):
-        indices.extend(sparseInfo[inode])
-        indptr.extend([len(indices)])
-    rawC = np.zeros(len(indices))
-    rawG = np.zeros(len(indices))
-    # rawCTuta = np.zeros(totalNodes)
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Assembling global matrix...'
-    # Generate C and G matrix.
-    cm = np.array([[2.0, 1.0, 1.0], [1.0, 2.0, 1.0], [1.0, 1.0, 2.0]])
-    # dcm = np.array([1.0, 1.0, 1.0])
-    for icell in range(totalElms):
-        # Compute local matrix first.
-        localc = cm * npAreas[icell] / 12.0
-        # localdc = dcm * npAreas[icell] / 3.0
-        localg = np.dot(npEdges[icell], npEdges[icell].transpose()) / (4 * npAreas[icell])
-        # Assembly to the glabal matrix.
-        for i in range(3):
-            # rawCTuta[npElms[icell, i]] += localdc[i]
-            for j in range(3):
-                rawindex = loc(indptr, indices, npElms[icell, i], npElms[icell, j])
-                rawC[rawindex] += localc[i, j]
-                rawG[rawindex] += localg[i, j]
-
-    C = csc_matrix((rawC, np.array(indices), np.array(indptr)), shape=(totalNodes, totalNodes))
-    G = csc_matrix((rawG, np.array(indices), np.array(indptr)), shape=(totalNodes, totalNodes))
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Creating inverse C...'
-    invCTuta = diags([1.0 / C.sum(axis=1).transpose()], [0], shape=(totalNodes, totalNodes))
-
-    # print 'Computating C Inverse...'
-    # factorC = cholesky(C)
-    # invC = factorC.inv()
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # Compute Q matrix according to C and G.
-    # print 'Computing K...'
-    K = (kappa**2)*C + G
-    # print K.todense()
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Computing of Q...'
-    Q1 = K
-    # Q = (K.dot(invC)).dot(K)
-    # Q2 = (K.dot(invCTuta)).dot(K) # Q2
-
-    # alpha = int(nu+dim/2.0)
-    # if alpha % 2 == 1:
-    #     Qi = 3
-    #     while Qi <= alpha:
-    #         Q1 = (((K.dot(invCTuta)).dot(Q1)).dot(invCTuta)).dot(K)
-    #         Qi += 2
-    #     Q = Q1
-    # else:
-    #     Qi = 4
-    #     while Qi <= alpha:
-    #         Q2 = (((K.dot(invCTuta)).dot(Q2)).dot(invCTuta)).dot(K)
-    #         Qi += 2
-    #     Q = Q2
-
-    Q = (((K.dot(invCTuta)).dot(Q1)).dot(invCTuta)).dot(K)
-    # Q = (((K.dot(invC)).dot(Q1)).dot(invC)).dot(K)
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Cholesky factor of Q...'
-    # Decomposition.
-    factorQ = cholesky(Q) # ordering_method="natural"
-    # L = factorQ.L()
-    # print(factorQ.L())
-    # lu = sla.splu(Q)
-    # print(lu.L)
-    # -- Get the permutation --
-    P = factorQ.P()
-    PT = np.zeros(len(P), dtype=int)
-    PT[P] = np.arange(len(P))
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Generating samples...'
-    # Generate normal distrib random nums & combine.
-    # Z = np.random.normal(size=(totalNodes, samplenum))
-    Z = np.empty((totalNodes, samplenum))
-    for i in range(samplenum):
-        Z[:,i] = np.random.normal(size=totalNodes)
-    # Z = Z * sigmaRatio
-
-    # print timeit.default_timer() - start_time
-    # start_time = timeit.default_timer()
-
-    # print 'Solving upper triangular syms...'
-    X = factorQ.solve_Lt(Z, use_LDLt_decomposition=False)
-    X = X[PT]
-    # print np.allclose(, Z)
-
-    X = X*sigmaRatio + mu
-    # print timeit.default_timer() - start_time
-
-    # X[X<=0.0] = 0.01
-
-    if resfilename is not None:
+        # print timeit.default_timer() - start_time
         # start_time = timeit.default_timer()
 
-        # Store back the random field.
-        # print 'Exporting data...'
-        vtkPointData = polyDataModel.GetPointData()
-        for itrade in range(min(samplenum, 100)): # X.shape[1] # !not exporting all data to save time
-            scaler = numpy_to_vtk(np.ascontiguousarray(X[:,itrade]))
-            scaler.SetName('RandomField ' + str(itrade+1))
-            vtkPointData.AddArray(scaler)
+        # print 'Creating the sparse matrix...'
+        # Create sparse data structure.
+        sparseInfo = [[] for _ in range(totalNodes)]
+        for icell in range(totalElms):
+            for inode in npElms[icell]:
+                # [sparseInfo[inode].extend([pt]) for pt in npElms[icell] if pt not in sparseInfo[inode]]
+                sparseInfo[inode].extend(npElms[icell])
+        sparseInfo = np.array(sparseInfo)
+        for knodes in range(totalNodes):
+            sparseInfo[knodes] = np.unique(sparseInfo[knodes])
+        # print(sparseInfo)
 
-        writer = vtk.vtkXMLPolyDataWriter()
-        writer.SetInputData(polyDataModel)
-        writer.SetFileName('{}.vtp'.format(resfilename))
-        writer.Write()
+        # Generate the sparse matrix.
+        indptr = [0]
+        indices = []
+        for inode in range(totalNodes):
+            indices.extend(sparseInfo[inode])
+            indptr.extend([len(indices)])
+        rawC = np.zeros(len(indices))
+        rawG = np.zeros(len(indices))
+        # rawCTuta = np.zeros(totalNodes)
 
-        np.save(resfilename, X)
+        # print timeit.default_timer() - start_time
+        # start_time = timeit.default_timer()
+
+        # print 'Assembling global matrix...'
+        # Generate C and G matrix.
+        cm = np.array([[2.0, 1.0, 1.0], [1.0, 2.0, 1.0], [1.0, 1.0, 2.0]])
+        # dcm = np.array([1.0, 1.0, 1.0])
+        for icell in range(totalElms):
+            # Compute local matrix first.
+            localc = cm * npAreas[icell] / 12.0
+            # localdc = dcm * npAreas[icell] / 3.0
+            localg = np.dot(npEdges[icell], npEdges[icell].transpose()) / (4 * npAreas[icell])
+            # Assembly to the glabal matrix.
+            for i in range(3):
+                # rawCTuta[npElms[icell, i]] += localdc[i]
+                for j in range(3):
+                    rawindex = loc(indptr, indices, npElms[icell, i], npElms[icell, j])
+                    rawC[rawindex] += localc[i, j]
+                    rawG[rawindex] += localg[i, j]
+
+        C = csc_matrix((rawC, np.array(indices), np.array(indptr)), shape=(totalNodes, totalNodes))
+        G = csc_matrix((rawG, np.array(indices), np.array(indptr)), shape=(totalNodes, totalNodes))
+
+        # print timeit.default_timer() - start_time
+        # start_time = timeit.default_timer()
+
+        # print 'Creating inverse C...'
+        invCTuta = diags([1.0 / C.sum(axis=1).transpose()], [0], shape=(totalNodes, totalNodes))
+
+        # print 'Computating C Inverse...'
+        # factorC = cholesky(C)
+        # invC = factorC.inv()
+
+        # print timeit.default_timer() - start_time
+        # start_time = timeit.default_timer()
+
+        # Compute Q matrix according to C and G.
+        # print 'Computing K...'
+        K = (kappa**2)*C + G
+        # print K.todense()
+
+        # print timeit.default_timer() - start_time
+        # start_time = timeit.default_timer()
+
+        # print 'Computing of Q...'
+        Q1 = K
+        Q2 = (K.dot(invCTuta)).dot(K) # Q2
+        Q = (((K.dot(invCTuta)).dot(Q1)).dot(invCTuta)).dot(K)
+        # Q = (((K.dot(invCTuta)).dot(Q2)).dot(invCTuta)).dot(K)
+
+        # alpha = int(nu+dim/2.0)
+        # if alpha % 2 == 1:
+        #     Qi = 3
+        #     while Qi <= alpha:
+        #         Q1 = (((K.dot(invCTuta)).dot(Q1)).dot(invCTuta)).dot(K)
+        #         Qi += 2
+        #     Q = Q1
+        # else:
+        #     Qi = 4
+        #     while Qi <= alpha:
+        #         Q2 = (((K.dot(invCTuta)).dot(Q2)).dot(invCTuta)).dot(K)
+        #         Qi += 2
+        #     Q = Q2
+
+
+        # print timeit.default_timer() - start_time
+        # start_time = timeit.default_timer()
+
+        # print 'Cholesky factor of Q...'
+        # Decomposition.
+        factorQ = cholesky(Q) # ordering_method="natural"
+        # L = factorQ.L()
+        # print(factorQ.L())
+        # lu = sla.splu(Q)
+        # print(lu.L)
+        # -- Get the permutation --
+        P = factorQ.P()
+        PT = np.zeros(len(P), dtype=int)
+        PT[P] = np.arange(len(P))
 
         # print timeit.default_timer() - start_time
 
-    # print 'Ploting...'
-    # check_correlation(X, npNodes, kappa)
-    # check_variance(X, 2, 1.0, kappa)
-    # check_variance(X, 3, 0.5, kappa)
+        # Remember things need to remember.
+        self.dim = dim
+        self.nu = nu
+        self.kappa = kappa
+        self.factorQ = factorQ
+        self.PT = PT
 
-    return X
+        self.polyDataModel = polyDataModel
+        self.totalNodes = totalNodes
+        self.npNodes = npNodes
+
+    def generate(self, mu, sigma, Z, resfilename=None, lb=None):
+
+        samplenum = Z.shape[1]
+        # start_time = timeit.default_timer()
+
+        # print 'Solving upper triangular syms...'
+        X = self.factorQ.solve_Lt(Z, use_LDLt_decomposition=False)
+        X = X[self.PT]
+        # print np.allclose(, Z)
+
+        # sigmaReal0 = np.std(X)
+        # sigmaReal1 = np.amax(np.std(X, axis=0))
+        # sigmaReal2 = np.amax(np.std(X, axis=1))
+        # sigmaReal3 = np.mean(np.std(X, axis=1))
+        # print(sigmaReal0, sigmaReal1, sigmaReal2, sigmaReal3)
+        # return
+        # sigmaReal = min(np.amax(np.std(X, axis=0)), np.amax(np.std(X, axis=1)))
+        # sigmaReal = (np.std(X) + np.amax(np.std(X, axis=1))) / 2.0
+        sigmaReal = np.std(X) + (np.amax(np.std(X, axis=1)) - np.std(X)) * 0.667
+        sigmaRatio = sigma/sigmaReal
+        X = X*sigmaRatio + mu
+        # print timeit.default_timer() - start_time
+
+        # X[X<=0.0] = 0.01
+        if lb is not None:
+            X[X<lb] = lb
+
+        if resfilename is not None:
+            # start_time = timeit.default_timer()
+
+            # Store back the random field.
+            # print 'Exporting data...'
+            vtkPointData = self.polyDataModel.GetPointData()
+            for itrade in range(min(samplenum, 100)): # X.shape[1] # !not exporting all data to save time
+                scaler = numpy_to_vtk(np.ascontiguousarray(X[:,itrade]))
+                scaler.SetName('RandomField ' + str(itrade+1))
+                vtkPointData.AddArray(scaler)
+
+            writer = vtk.vtkXMLPolyDataWriter()
+            writer.SetInputData(self.polyDataModel)
+            writer.SetFileName('{}.vtp'.format(resfilename))
+            writer.Write()
+
+            np.save(resfilename, X)
+
+            # print timeit.default_timer() - start_time
+
+        print('Ploting...')
+        check_correlation(X, self.npNodes, self.kappa)
+        # check_variance(X, self.dim, self.nu, self.kappa)
+        # check_variance(X, 3, 0.5, kappa)
+
+        return X
+
 
 if __name__ == '__main__':
     # solidfile = 'Examples/CylinderProject/mesh-complete/mesh-complete.exterior.vtp'
@@ -269,14 +278,34 @@ if __name__ == '__main__':
     #     GMRF(solidfile, mu=7.0e6, sigma=1.0e5, rho=rho, samplenum=iSmp, resfilename='{}{:03}'.format(resE, iSmp))
 
     # solidfile = 'Examples/CylinderProject/refine-mesh-complete/mesh-complete.exterior.vtp'
-    solidfile = 'Examples/CylinderProject/mesh-complete/mesh-surfaces/wall.vtp'
+    # solidfile = 'Examples/CylinderProject/mesh-complete/mesh-surfaces/wall.vtp'
     # resThickness = 'Examples/CylinderProject/WallProperties/thickness'
-    resE = 'Examples/CylinderProject/WallProperties/YoungsModulus'
+    # resE = 'Examples/CylinderProject/WallProperties/YoungsModulus'
+    # resThickness = 'thickness'
+    # resE = 'YoungsModulus'
+
+
+    solidfile = 'Examples/lc/lcSparse-mesh-complete/walls_combined.vtp'
+    resThickness = 'Examples/lc/SparseWallProperties/thickness'
+    resE = 'Examples/lc/SparseWallProperties/YoungsModulus'
+
+    # print 'Generating samples...'
+    # Generate normal distrib random nums & combine.
+    # Z = np.random.normal(size=(totalNodes, samplenum))
+    samplenum = 100
+    totalNodes = 22581
+    Z = np.empty((totalNodes, samplenum))
+    # for i in range(samplenum):
+    #     Z[:,i] = np.random.normal(size=totalNodes)
+    for i in range(totalNodes):
+        Z[i,:] = np.random.normal(size=samplenum)
 
     rhos = np.array([0.95, 3.7, 7.2])
     for rho in rhos:
-        # GMRF(solidfile, mu=0.4, sigma=0.04, rho=rho, samplenum=100, resfilename='{}{}'.format(resThickness, rho))
-        GMRF(solidfile, mu=7.0e6, sigma=7.0e5, rho=rho, samplenum=100, resfilename='{}{}'.format(resE, rho))
+        gf = GMRF(solidfile, rho=rho)
+
+        gf.generate(mu=0.075, sigma=0.017, Z=Z, resfilename='{}{}'.format(resThickness, rho), lb=0.024)
+        gf.generate(mu=1.15e7, sigma=1.7e6, Z=Z, resfilename='{}{}'.format(resE, rho))
 
     # resE = 'Examples/CylinderProject/WallProperties/TestYoungsModulus'
     # GMRF(solidfile, mu=7.0e6, sigma=1.0e6, rho=0.95, samplenum=100, resfilename='{}{}'.format(resE, 0.95))
