@@ -331,9 +331,21 @@ class GPUSolidSolver(PhysicsSolver):
         self.comm.Bcast(self.LHS, root=0)
 
 
+    def SaveDisplacement(self, filename, counter):
+        # Prepare/Union the displacement.
+        self.UnionDisplacement(self.srcU)
+        self.UnionDisplacement(self.srcUP)
+
+        if self.rank == 0:
+            self.mesh.SaveDisplacement(filename, counter,
+                                       self.srcU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof)
+                                       self.srcUP.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof))
+        # Barrier everyone!
+        self.comm.Barrier()
+
     def Save(self, filename, counter):
         # Prepare/Union the displacement.
-        self.UnionDisplacement()
+        self.UnionDisplacement(self.srcU)
 
         # Prepare stress.
         update_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
@@ -362,7 +374,7 @@ class GPUSolidSolver(PhysicsSolver):
         # Barrier everyone!
         self.comm.Barrier()
 
-    def UnionDisplacement(self):
+    def UnionDisplacement(self, quant):
 
         if self.size == 1:
             return
@@ -373,10 +385,10 @@ class GPUSolidSolver(PhysicsSolver):
             for i in range(1, self.size):
                 self.comm.Recv(uBuf, MPI.ANY_SOURCE, TAG_DISPLACEMENT)
                 # Flag the nodes uBuf acctually contains.
-                self.srcU[uBuf!=0] = uBuf[uBuf!=0]
+                quant[uBuf!=0] = uBuf[uBuf!=0]
 
         else:
-            self.comm.Send(self.srcU, 0, TAG_DISPLACEMENT)
+            self.comm.Send(quant, 0, TAG_DISPLACEMENT)
 
 
     def UnionStress(self):

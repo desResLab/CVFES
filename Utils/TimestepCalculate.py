@@ -7,7 +7,8 @@ from vtk.util.numpy_support import numpy_to_vtk
 import vtk
 
 # mesh_file_path = '../Examples/lc/SparseWallProperties/YoungsModulus.vtp'
-mesh_file_path = '../Examples/CylinderProject/WallProperties/YoungsModulus.vtp'
+# mesh_file_path = '../Examples/CylinderProject/WallProperties/YoungsModulus.vtp'
+mesh_file_path = '../Examples/CylinderProject/RefineWallProperties/YoungsModulus.vtp'
 
 
 def CalcTimestep(filename):

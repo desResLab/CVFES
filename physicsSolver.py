@@ -77,6 +77,9 @@ class PhysicsSolver:
     def Save(self, filename, counter):
         pass
 
+    def SaveDisplacement(self, filename, counter):
+        pass
+
 
 class FluidSolver(PhysicsSolver):
 

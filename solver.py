@@ -41,7 +41,7 @@ TAG_DISPLACEMENT = 223
 TAG_CHECKING_STIFFNESS = 311
 
 # TODO:: Change this after solid and fluid combining.
-modelname = 'Examples/CylinderProject/FineResults/sparse_wallpressure_'
+modelname = 'Examples/CylinderProject/Results/sparse_wallpressure_'
 
 """ This is the big solver we are going to use here.
 """
@@ -154,11 +154,11 @@ class TransientSolver(Solver):
         # Calculate when to save the result into file.
         saveSteps = np.linspace(0, self.nTimeSteps, self.saveResNum+1, dtype=int)
 
-        # # TODO:: Change after combining solid and fluid parts togeter.
-        # # Prepare the traction to be applied for solid part.
-        # self.nt = 0
-        # self.strac = np.zeros_like(self.wallStress, dtype=np.float)
-        # self.etrac = np.load('{}{}.npy'.format(modelname, self.nt))
+        # TODO:: Change after combining solid and fluid parts togeter.
+        # Prepare the traction to be applied for solid part.
+        self.nt = 0
+        self.strac = np.zeros_like(self.wallStress, dtype=np.float)
+        self.etrac = np.load('{}{}.npy'.format(modelname, self.nt))
 
         for timeStep in range(self.restartTimestep, self.nTimeSteps):
             t = self.t[timeStep]
@@ -166,19 +166,19 @@ class TransientSolver(Solver):
             # Solve for the fluid part.
             self.fluidSolver.Solve(t, dt)
 
-            # TODO:: Remember to delete after combining the solid and fluid part.
-            BdyStressExport(self.lumenNodes, self.elmCnnWall, self.elmWallIndicesPtr,
-                            self.elmWallIndices, self.wallElements, self.wallGlbNodeIds,
-                            self.fluidSolver.du.reshape(self.fluidSolver.mesh.nNodes, 3),
-                            self.fluidSolver.p, self.fluidSolver.lDN, self.wallStress)
-            np.save('{}{}'.format(modelname, timeStep), self.wallStress)
+            # # TODO:: Remember to delete after combining the solid and fluid part.
+            # BdyStressExport(self.lumenNodes, self.elmCnnWall, self.elmWallIndicesPtr,
+            #                 self.elmWallIndices, self.wallElements, self.wallGlbNodeIds,
+            #                 self.fluidSolver.du.reshape(self.fluidSolver.mesh.nNodes, 3),
+            #                 self.fluidSolver.p, self.fluidSolver.lDN, self.wallStress)
+            # np.save('{}{}'.format(modelname, timeStep), self.wallStress)
 
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
             # TODO:: Remeber to change this when combining the solid and fluid part together.
-            # traction = self.PrepareTraction(t+dt, dt)
-            # self.solidSolver.ApplyTraction(traction)
-            # # self.solidSolver.ApplyPressure(self.appPressures)
+            traction = self.PrepareTraction(t+dt, dt)
+            self.solidSolver.ApplyTraction(traction)
+            # self.solidSolver.ApplyPressure(self.appPressures)
             self.solidSolver.Solve(t, dt)
             # Refresh the fluid solver's context
             # before next loop start.
@@ -186,7 +186,8 @@ class TransientSolver(Solver):
 
             if timeStep+1 in saveSteps:
                 self.fluidSolver.Save(self.saveStressFilename, timeStep+1)
-                self.solidSolver.Save(self.saveStressFilename, timeStep+1)
+                # self.solidSolver.Save(self.saveStressFilename, timeStep+1)
+                self.solidSolver.SaveDisplacement(self.saveStressFilename, timeStep+1)
 
 
 """ For generalized-a method:

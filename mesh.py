@@ -461,6 +461,29 @@ class SolidMesh(Mesh):
 
         print('Write result to {}.'.format(stressFilename))
 
+    def SaveDisplacement(self, filename, counter, u, up):
+        """ Save displacement and previous displacement to files.
+            The previous displacement is used to update the coordinates.
+        """
+        for iSmp in range(self.nSmp):
+            uTuples = numpy_to_vtk(u[iSmp,:,:])
+            uTuples.SetName('{}_{:03d}'.format('u', iSmp))
+            self.polyDataModel.GetPointData().AddArray(uTuples)
+
+            uTuples = numpy_to_vtk(up[iSmp,:,:])
+            uTuples.SetName('{}_{:03d}'.format('up', iSmp))
+            self.polyDataModel.GetPointData().AddArray(uTuples)
+
+        filename, fileExtension = os.path.splitext(filename)
+        stressFilename = '{}{}{}'.format(filename, counter, fileExtension)
+
+        writer = vtk.vtkXMLPolyDataWriter() if fileExtension.endswith('vtp') else vtk.vtkXMLUnstructuredGridWriter()
+        writer.SetInputData(self.polyDataModel)
+        writer.SetFileName(stressFilename)
+        writer.Write()
+
+        print('Write result to {}.'.format(stressFilename))
+
     def DebugSave(self, filename, val, uname='debug', pointData=True):
         """ Save the stress result of elements at time t with stress tensor of dim.
             Dim is an array like ['xx', 'yy', 'xy', 'xz', 'yz']
