@@ -38,6 +38,7 @@ if __name__ == "__main__":
     eqn = '2.759e4*t**4-1.655e4*t**3+2.548e3*t**2-1.9565e1*t+1.5 if t>=0.0 and t<0.28 else -25.0*(t-0.28)+2.0 if t<=0.3 else 1.5-20.0*(t-0.3) if t<=0.35 else 0.5+5.0*(t-0.35) if t<=0.65 else -5.0*(t-0.65)+2.0 if t<=0.75 else 1.5'
 
     flow = FlowCalc(stime, etime, dt, cycletime, eqn)
+    flow[:,1] = -1000.0/60.0 * flow[:,1]
     np.savetxt('../cfg/cylinderSparseInlet.flow', flow)
 
     plt.plot(flow[:,0], flow[:,1])

@@ -264,36 +264,33 @@ class GMRF:
 
 
 if __name__ == '__main__':
-    # solidfile = 'Examples/CylinderProject/mesh-complete/mesh-complete.exterior.vtp'
-    # resThickness = 'Examples/CylinderProject/WallProperties/numberOfSamples/thickness'
-    # resE = 'Examples/CylinderProject/WallProperties/numberOfSamples/YoungsModulus'
 
-    solidfile = 'Examples/CylinderProject/refine-mesh-complete/mesh-complete.exterior.vtp'
-    resThickness = 'Examples/CylinderProject/RefineWallProperties/numberOfSamples/thickness'
-    resE = 'Examples/CylinderProject/RefineWallProperties/numberOfSamples/YoungsModulus'
-
-    rho = 7.2
-    # for iSmp in range(1,101):
-    #     GMRF(solidfile, mu=0.4, sigma=0.04, rho=rho, samplenum=iSmp, resfilename='{}{:03}'.format(resThickness, iSmp))
-    #     GMRF(solidfile, mu=7.0e6, sigma=1.0e5, rho=rho, samplenum=iSmp, resfilename='{}{:03}'.format(resE, iSmp))
-
-    # solidfile = 'Examples/CylinderProject/refine-mesh-complete/mesh-complete.exterior.vtp'
-    # solidfile = 'Examples/CylinderProject/mesh-complete/mesh-surfaces/wall.vtp'
-    # resThickness = 'Examples/CylinderProject/WallProperties/thickness'
-    # resE = 'Examples/CylinderProject/WallProperties/YoungsModulus'
-    # resThickness = 'thickness'
-    # resE = 'YoungsModulus'
+    solidfile = 'Examples/CylinderProject/refine-mesh-complete/walls_combined.vtp'
+    totalNodes = 7628
+    resThickness = 'Examples/CylinderProject/RefineWallProperties/thickness'
+    thick_mu = 0.4
+    thick_sigma = 0.04
+    thick_lb = 0.28
+    resE = 'Examples/CylinderProject/RefineWallProperties/YoungsModulus'
+    E_mu = 7.0e6
+    E_sigma = 7.0e5
 
 
-    solidfile = 'Examples/lc/lcSparse-mesh-complete/walls_combined.vtp'
-    resThickness = 'Examples/lc/SparseWallProperties/thickness'
-    resE = 'Examples/lc/SparseWallProperties/YoungsModulus'
+    # solidfile = 'Examples/lc/lcSparse-mesh-complete/walls_combined.vtp'
+    # totalNodes = 22581
+    # resThickness = 'Examples/lc/SparseWallProperties/thickness'
+    # thick_mu = 0.075
+    # thick_sigma = 0.017
+    # thick_lb = 0.024
+    # resE = 'Examples/lc/SparseWallProperties/YoungsModulus'
+    # E_mu = 1.15e7
+    # E_sigma = 1.7e6
 
+
+    samplenum = 100
     # print 'Generating samples...'
     # Generate normal distrib random nums & combine.
     # Z = np.random.normal(size=(totalNodes, samplenum))
-    samplenum = 100
-    totalNodes = 22581
     Z = np.empty((totalNodes, samplenum))
     # for i in range(samplenum):
     #     Z[:,i] = np.random.normal(size=totalNodes)
@@ -304,8 +301,6 @@ if __name__ == '__main__':
     for rho in rhos:
         gf = GMRF(solidfile, rho=rho)
 
-        gf.generate(mu=0.075, sigma=0.017, Z=Z, resfilename='{}{}'.format(resThickness, rho), lb=0.024)
-        gf.generate(mu=1.15e7, sigma=1.7e6, Z=Z, resfilename='{}{}'.format(resE, rho))
+        gf.generate(mu=thick_mu, sigma=thick_sigma, Z=Z, resfilename='{}{}'.format(resThickness, rho), lb=thick_lb)
+        gf.generate(mu=E_mu, sigma=E_sigma, Z=Z, resfilename='{}{}'.format(resE, rho))
 
-    # resE = 'Examples/CylinderProject/WallProperties/TestYoungsModulus'
-    # GMRF(solidfile, mu=7.0e6, sigma=1.0e6, rho=0.95, samplenum=100, resfilename='{}{}'.format(resE, 0.95))

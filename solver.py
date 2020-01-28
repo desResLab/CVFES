@@ -41,7 +41,7 @@ TAG_DISPLACEMENT = 223
 TAG_CHECKING_STIFFNESS = 311
 
 # TODO:: Change this after solid and fluid combining.
-modelname = 'Examples/CylinderProject/Results/sparse_wallpressure_'
+modelname = 'Examples/CylinderProject/FineResults/sparse_wallpressure_'
 
 """ This is the big solver we are going to use here.
 """
