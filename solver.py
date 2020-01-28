@@ -42,6 +42,7 @@ TAG_CHECKING_STIFFNESS = 311
 
 # TODO:: Change this after solid and fluid combining.
 modelname = 'Examples/CylinderProject/Results/sparse_wallpressure_'
+dt_f = 0.02
 
 """ This is the big solver we are going to use here.
 """
@@ -128,8 +129,6 @@ class TransientSolver(Solver):
         self.wallElements = meshes['wall'].elementNodeIds
 
     def PrepareTraction(self, t, dt):
-        dt_f = 0.001
-
         if int(t/dt_f) > self.nt:
             self.nt += 1
             self.strac = self.etrac
@@ -176,7 +175,7 @@ class TransientSolver(Solver):
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
             # TODO:: Remeber to change this when combining the solid and fluid part together.
-            traction = self.PrepareTraction(t+dt, dt)
+            traction = self.PrepareTraction(t, dt)
             self.solidSolver.ApplyTraction(traction)
             # self.solidSolver.ApplyPressure(self.appPressures)
             self.solidSolver.Solve(t, dt)

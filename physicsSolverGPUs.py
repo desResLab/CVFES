@@ -338,7 +338,7 @@ class GPUSolidSolver(PhysicsSolver):
 
         if self.rank == 0:
             self.mesh.SaveDisplacement(filename, counter,
-                                       self.srcU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof)
+                                       self.srcU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof),
                                        self.srcUP.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof))
         # Barrier everyone!
         self.comm.Barrier()
