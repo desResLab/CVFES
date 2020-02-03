@@ -19,7 +19,7 @@ def parseXML(xmlfile):
 
     newitems = []
     for item in root.findall('./timestep/path_element/path_points/path_point'):
-        print(item.get('id'))
+        # print(item.get('id'))
         for subitem in item:
             if subitem.tag == 'pos':
                 newitems.append([float(subitem.get('x')), float(subitem.get('y')), float(subitem.get('z'))])
@@ -64,8 +64,9 @@ def readinModel(dispfile, Efile, nSmp):
     u = np.zeros((3*nNodes, nSmp))
     up = np.zeros((3*nNodes, nSmp))
     for iSmp in range(nSmp):
+        # u[:,iSmp] = vtk_to_numpy(polyDataModel.GetPointData().GetArray('{}_{:03d}'.format('displacement', iSmp))).ravel()
         u[:,iSmp] = vtk_to_numpy(polyDataModel.GetPointData().GetArray('{}_{:03d}'.format('u', iSmp))).ravel()
-        up[:,iSmp] = vtk_to_numpy(polyDataModel.GetPointData().GetArray('{}_{:03d}'.format('up', iSmp))).ravel()
+        # up[:,iSmp] = vtk_to_numpy(polyDataModel.GetPointData().GetArray('{}_{:03d}'.format('up', iSmp))).ravel()
 
 
     # Readin the Young's Modulus.
@@ -89,16 +90,8 @@ def calcGlbStress(dispfile, Efile, nSmp):
 
     model = readinModel(dispfile, Efile, nSmp)
 
-
-    xw = np.array([[0.5, 0.5, 0, 1.0/3.0],
-                   [0.5, 0, 0.5, 1.0/3.0],
-                   [0, 0.5, 0.5, 1.0/3.0]])
-    gps = xw[:,:3]
-
     # Young's Modulus
-    elmVerE = model.E[model.elements,:]
-    elmVerE = elmVerE.swapaxes(1,2)
-    elmGE = np.matmul(elmVerE, gps.T)
+    elmAvgE = np.mean(model.E[model.elements,:], axis=1)
     # D
     k = 5.0/6.0
     v = 0.4
@@ -111,11 +104,11 @@ def calcGlbStress(dispfile, Efile, nSmp):
 
     model.glbStress = np.empty((model.nElements, nSmp, 3, 3))
     updateNodes = np.tile(model.nodes, (nSmp, 1, 1))
-    updateNodes = updateNodes.reshape(nSmp, 3*model.nNodes) + model.up.transpose()
+    # updateNodes = updateNodes.reshape(nSmp, 3*model.nNodes) + model.up.transpose()
+    updateNodes = updateNodes.reshape(nSmp, 3*model.nNodes)
     model.updateNodes = updateNodes.reshape(nSmp, model.nNodes, 3)
     OptimizedCalculateStress(model.updateNodes, model.elements,
-                             D, np.mean(elmGE, axis=2),
-                             model.u, model.glbStress)
+                             D, elmAvgE, model.u, model.glbStress)
 
     return model
 
@@ -134,11 +127,11 @@ def getControlPoints(model, paths):
         minvalue = 10000.0
         for ipath in range(len(paths)):
             idx = np.argmin(distances[ipath])
-            value = distances[ipath, idx]
+            value = distances[ipath][idx]
             if value < minvalue:
                 minpath, minidx, minvalue = ipath, idx, value
 
-        elmCtrlPts[iElm,:,:] = paths[minpath][[minidx-1, minidx],:] if minidx > 0 else paths[minpath][[minidx, minidx+1],:]
+        elmCtrlPts[iElm,:,:] = paths[minpath][[minidx, minidx-1],:] if minidx > 0 else paths[minpath][[minidx+1, minidx],:]
 
     return elmCtrlPts
 
@@ -147,9 +140,12 @@ def transformStress(model, paths, nSmp):
 
     elmCtrlPts = getControlPoints(model, paths)
 
+    # for debugging
+    # model.elmZ = np.empty((model.nElements, 3))
     model.tStress = np.empty((model.nElements, nSmp, 3, 3))
     TranformStress(model.updateNodes, model.elements, elmCtrlPts,
                    model.glbStress, model.tStress)
+                   # model.glbStress, model.tStress, model.elmZ)
 
 
 def writeStress(model, modelfile, resultfile, nSmp):
@@ -169,6 +165,11 @@ def writeStress(model, modelfile, resultfile, nSmp):
             stressVec.SetName('{}_{:03d}'.format(name, iSmp))
             polyDataModel.GetCellData().AddArray(stressVec)
 
+    # # for debugging
+    # elmZVec = numpy_to_vtk(model.elmZ)
+    # elmZVec.SetName('localZ')
+    # polyDataModel.GetCellData().AddArray(elmZVec)
+
     writer = vtk.vtkXMLPolyDataWriter()
     writer.SetInputData(polyDataModel)
     writer.SetFileName(resultfile)
@@ -179,7 +180,7 @@ def writeStress(model, modelfile, resultfile, nSmp):
 
 def main():
 
-    # # Get the points along the centerlines.
+    # Get the points along the centerlines.
     # pathfiles = ['../Examples/lc/CenterLinePath/lc1.pth',
     #              '../Examples/lc/CenterLinePath/lc1_sub1.pth',
     #              '../Examples/lc/CenterLinePath/lc1_sub2.pth',
@@ -195,14 +196,19 @@ def main():
              np.array([[0.0, 0.0, 20.0], [0.0, 0.0, 13.0]]),
              np.array([[0.0, 0.0, 10.0], [0.0, 0.0, 0.0]])]
 
+
     # Calc global stress tensor.
+    # modelfile = '../Examples/lc/lcSparse-mesh-complete/walls_combined.vtp'
+    # dispfile = '../Examples/lc/SparseSolidResultsRho0.95/displacement_2cycles560000.vtp'
+    # Efile = '../Examples/lc/SparseWallProperties/YoungsModulus0.95.npy'
+    # resultfile = '../Examples/lc/SparseSolidResultsRho0.95/stress_2cycles560000.vtp'
+
     modelfile = '../Examples/CylinderProject/mesh-complete/walls_combined.vtp'
-    dispfile = '../Examples/CylinderProject/SparseResultRho0.95/WithoutStress/displacement_2cycles10125.vtp'
+    dispfile = '../Examples/CylinderProject/SparseResultRho0.95/WithoutStress/displacement_2cycles37500.vtp'
     Efile = '../Examples/CylinderProject/WallProperties/YoungsModulus0.95.npy'
-    resultfile = '../Examples/CylinderProject/SparseResultRho0.95/stress_2cycles10125.vtp'
+    resultfile = '../Examples/CylinderProject/SparseResultRho0.95/stress_2cycles37500.vtp'
 
     model = calcGlbStress(dispfile, Efile, 100)
-
 
     # Transform to "Shear" stress along the wall.
     transformStress(model, paths, 100)
@@ -211,6 +217,33 @@ def main():
     writeStress(model, modelfile, resultfile, 100)
 
 
+def tellDifference(nElms, nSmp):
+    ''' Tell the difference btw stress calculated using
+        updated and non-updated nodes coordinates.
+    '''
+    file1 = '../Examples/CylinderProject/SparseResultRho0.95/Tstress_2cycles37500.vtp'
+    file2 = '../Examples/CylinderProject/SparseResultRho0.95/NTstress_2cycles37500.vtp'
+    files = [file1, file2]
+
+    dim = np.array(['xx', 'xy', 'xz', 'yy', 'yz', 'zz'])
+    stresses = np.empty((len(files), len(dim), nSmp, nElms))
+
+    for ifile in range(len(files)):
+        # Read mesh
+        reader = vtk.vtkXMLPolyDataReader()
+        reader.SetFileName(files[ifile])
+        reader.Update()
+        polyDataModel = reader.GetOutput()
+
+        # Add result and write
+        for i, name in enumerate(dim):
+            for iSmp in range(nSmp):
+                stresses[ifile, i, iSmp, :] = vtk_to_numpy(polyDataModel.GetCellData().GetArray('{}_{:03d}'.format(name, iSmp)))
+
+    print('The difference percentage is {}'.format(np.linalg.norm(stresses[1]-stresses[0])/np.linalg.norm(stresses[0])))
+
+
 if __name__ == "__main__":
 
     main()
+    # tellDifference(5074, 100)

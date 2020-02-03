@@ -299,6 +299,7 @@ cdef void ShearTransform(double[:,:,::1] nodes, long[::1] eNIds,
 @cython.wraparound(False)
 def TranformStress(double[:,:,::1] nodes, long[:,::1] elements, double[:,:,::1] elmCtrlPts,
                    double[:,:,:,::1] stress, double[:,:,:,::1] tStress):
+                   # double[:,::1] elmZ): # for debugging
 
     cdef long nElms = elements.shape[0]
     cdef long iElm, iSmp
@@ -346,3 +347,9 @@ def TranformStress(double[:,:,::1] nodes, long[:,::1] elements, double[:,:,::1] 
             tStress[iElm,iSmp,2,0] = TS[2,0]*T[0,0] + TS[2,1]*T[0,1] + TS[2,2]*T[0,2]
             tStress[iElm,iSmp,2,1] = TS[2,0]*T[1,0] + TS[2,1]*T[1,1] + TS[2,2]*T[1,2]
             tStress[iElm,iSmp,2,2] = TS[2,0]*T[2,0] + TS[2,1]*T[2,1] + TS[2,2]*T[2,2]
+
+            # # for debugging, store the z axis
+            # if iSmp == 0:
+            #     elmZ[iElm,0] = T[2,0]
+            #     elmZ[iElm,1] = T[2,1]
+            #     elmZ[iElm,2] = T[2,2]

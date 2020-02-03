@@ -5,7 +5,7 @@
 #$ -q gpu@@appliedmath_gpu
 #$ -l gpu_card=2
 #$ -pe smp 2                # Specify parallel environment and legal core size
-#$ -N GPUCVFES_Solid        # Specify job name
+#$ -N CVFESGPU_Solid        # Specify job name
 ##$ -t 1-9:2                # Specify number of tasks in array
 
 
