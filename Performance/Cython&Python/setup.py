@@ -9,10 +9,6 @@ ext_modules = [
         extra_compile_args=['-fopenmp'],
         extra_link_args=['-fopenmp'],
     ),
-    Extension(
-        "util",
-        ["util.pyx"],
-    )
 ]
 
 setup(

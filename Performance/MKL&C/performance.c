@@ -1,6 +1,6 @@
 // Testing MKL and C pure implementation.
 
-#define LOOP_COUNT  1
+#define LOOP_COUNT  1000
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
     indptr[0] = 0;
     for (i=0; i<nz; i++)
     {
-        if (J[i] != curLine)
+        if (I[i] != curLine)
         {
             indptr[++curLine] = i;
         }
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
     }
 
     max_threads = mkl_get_max_threads();
-    mkl_set_num_threads(1);
+    mkl_set_num_threads(max_threads);
 
     // Performance with MKL lib.
     s_initial = dsecnd();
@@ -111,12 +111,12 @@ int main(int argc, char *argv[])
     for (r=0; r<LOOP_COUNT; r++)
     {
         /*void mkl_cspblas_dcsrgemv (const char *transa , const MKL_INT *m , const double *a , const MKL_INT *ia , const MKL_INT *ja , const double *x , double *y );*/
-        mkl_cspblas_dcsrgemv("N", &M, val, indptr, I, b, y);
+        mkl_cspblas_dcsrgemv("N", &M, val, indptr, J, b, y);
     }
 
     s_elapsed = (dsecnd() - s_initial) / LOOP_COUNT;
     printf (" == Matrix multiplication using Intel(R) MKL dgemm completed ==\n"
-            " == at %.5f milliseconds using %d thread(s) ==\n\n", (s_elapsed * 1000), 1);
+            " == at %.5f milliseconds using %d thread(s) ==\n\n", (s_elapsed * 1000), max_threads);
 
     // Performance with my lib.
     for (i=0; i<M; i++)
@@ -129,13 +129,12 @@ int main(int argc, char *argv[])
     for (r=0; r<LOOP_COUNT; r++)
     {
         /*void mkl_cspblas_dcsrgemv (const char *transa , const MKL_INT *m , const double *a , const MKL_INT *ia , const MKL_INT *ja , const double *x , double *y );*/
-        spmv(M, indptr, I, val, b, y);
+        spmv(M, indptr, J, val, b, y);
     }
 
     s_elapsed = (dsecnd() - s_initial) / LOOP_COUNT;
     printf (" == Matrix multiplication using my spmv completed ==\n"
             " == at %.5f milliseconds using %d thread(s) ==\n\n", (s_elapsed * 1000), 1);
-
 
     // for (i=0; i<M; i++)
     //     fprintf(stdout, "%20.19g\n", y[i]);

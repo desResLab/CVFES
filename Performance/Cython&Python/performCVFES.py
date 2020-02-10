@@ -1,26 +1,40 @@
 # Computing with the CVFES origin data structure.
 
+import sys
 import numpy as np
 from timeit import default_timer as timer
-
 from cy_spmv import MultiplyByVectorOrigin
 
 LOOP_COUNT = 1000
 
-data = np.load('cylinder.npz')
+def main():
 
-# print('{} \t {}'.format(len(X.indptr)-1, len(X.indices)))
+    data = np.load(sys.argv[1])
+    indptr = data['indptr']
+    indices = data['indices']
+    M = data['M']
 
-m = len(data.indptr)-1
-nSmp = data.M.shape[1]
-v = np.ones((m*3, nSmp))
-y = np.zeros((m*3, nSmp))
+    if len(sys.argv) > 2:
+        M = np.tile(M, (1, int(sys.argv[2]), 1, 1))
 
-start = timer()
+    m = len(indptr)-1
+    nSmp = M.shape[1]
+    v = np.ones((m*3, nSmp))
+    y = np.zeros((m*3, nSmp))
 
-for i in range(LOOP_COUNT):
-    MultiplyByVectorOrigin(data.indptr, data.indices, data.M, v, y)
+    start = timer()
 
-end = timer()
+    for i in range(LOOP_COUNT):
+        MultiplyByVectorOrigin(indptr, indices, M, v, y)
 
-print('OK, \t\t\t time: {:10.1f} ms'.format((end - start)/float(LOOP_COUNT) * 1000.0))
+    end = timer()
+
+    print('OK, \t\t\t time: {:10.5f} ms'.format((end - start)/float(LOOP_COUNT) * 1000.0))
+
+
+if __name__ == "__main__":
+
+    if len(sys.argv) < 2:
+        sys.exit()
+
+    main()

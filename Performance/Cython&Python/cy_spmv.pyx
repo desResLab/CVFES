@@ -21,7 +21,7 @@ def MultiplyByVector(int nNodes, int[::1] indptr, int[::1] indices,
 
     # cdef int num_threads
 
-    for a in prange(nNodes, nogil=True, num_threads=1):
+    for a in prange(nNodes, nogil=True): # , num_threads=1):
         # if a == 0:
         #     num_threads = openmp.omp_get_num_threads()
         #     printf('How many threads are using: %d\n', num_threads)
@@ -43,9 +43,9 @@ def MultiplyByVectorOrigin(long[::1] indptr, long[::1] indices,
 
     cdef long nSamples = M.shape[1]
     cdef long s
-    cdef int num_threads
+    # cdef int num_threads
 
-    for a in prange(nNodes, nogil=True, num_threads=1):
+    for a in prange(nNodes, nogil=True): # , num_threads=1):
         # if a == 0:
         #     num_threads = openmp.omp_get_num_threads()
         #     printf('How many threads are using: %d\n', num_threads)

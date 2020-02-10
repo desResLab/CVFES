@@ -7,15 +7,17 @@ import matplotlib.pyplot as plt
 # x: total time consuming executing nSmp
 # y: nSmp * time consuming executing 1 sample
 class PlotData:
-    def __init__(self, name, x, nSmps):
+    def __init__(self, name, x, nSmps, marker, color):
         self.name = name
         self.nSmps = nSmps[:len(x)]
         self.x = x
         self.y = x[0] * self.nSmps
+        self.marker = marker
+        self.color = color
 
 
 # Plot the Performance rate btw actual time and time of 1 sample * nSmp.
-def PPlot(plotDataArray, title, plotName, ibase=0):
+def PPlot(plotDataArray, title, plotName, xlim, ylim, ibase=0):
 
     fs=8
     ms=6
@@ -26,29 +28,33 @@ def PPlot(plotDataArray, title, plotName, ibase=0):
 
     # Figure
     plt.figure(figsize=(3,3))
-    plt.plot(plotDataArray[ibase].x, plotDataArray[ibase].x, '--', label='1:1 Line')
+    plt.plot(plotDataArray[ibase].x, plotDataArray[ibase].x, '-.', c='k', label='Equal Performance')
 
     ax = plt.gca()
     for plotData in plotDataArray:
-        color = next(ax._get_lines.prop_cycler)['color']
-        # color = ax._get_lines.color_cycle.next()
+        # color = next(ax._get_lines.prop_cycler)['color']
+        # # color = ax._get_lines.color_cycle.next()
         # Scatter the corresponding value.
-        plt.scatter(plotData.x, plotData.y, marker='s', s=ms, c=color)
+        plt.plot(plotData.x, plotData.y, plotData.marker, ms=ms, c=plotData.color, label=plotData.name)
         # Fit the line.
         z = np.polyfit(plotData.x, plotData.y, 1)
         p = np.poly1d(z)
         x = np.linspace(plotData.x[0], plotDataArray[ibase].x[-1], 100)
-        plt.plot(x, p(x), label=plotData.name, c=color)
+        plt.plot(x, p(x), '--', c=plotData.color)
 
-    plt.xlabel('Computing time for n samples (min)', fontsize=fs)
-    plt.ylabel('Computing time for 1 sample * n (min)', fontsize=fs)
+    plt.xlabel(r'CPU Time for $n$ Samples [min]', fontsize=fs)
+    plt.ylabel(r'CPU Time for 1 Sample $\times n$ [min]', fontsize=fs)
+    plt.ticklabel_format(style='sci', axis='y', scilimits=(0,1))
     plt.tick_params(axis='both', which='major', labelsize=fs)
     # plt.title('Performance Comparison of Mesh', fontsize=fs)
     plt.title(title, fontsize=fs)
-    plt.legend(loc='upper left', fontsize=fs)
-    plt.grid(True, which='both', alpha=0.2)
-    plt.xlim([0.0, plotDataArray[ibase].x[-1]+1.0])
-    plt.ylim([-100.0, 1000.0])
+    # plt.legend(loc='upper left', fontsize=fs)
+    plt.legend(fontsize=fs, handlelength=3)
+    # plt.grid(True, which='both', alpha=0.2)
+    # plt.xlim([0.0, plotDataArray[ibase].x[-1]+1.0])
+    # plt.ylim([-100.0, 1000.0])
+    plt.xlim(xlim)
+    plt.ylim(ylim)
     plt.tight_layout()
     plt.savefig(plotName)
 
@@ -105,9 +111,14 @@ def SpeedUp(plotDataArray, nSmps):
 
     print('smpRate\n {}\npuRate\n {}'.format(smpRate, puRate))
 
+def TimeFormatting(CPUTimes):
+    mytimes = [[str(datetime.timedelta(seconds=int(t*60))) for t in tpu] for tpu in CPUTimes]
+    # mytimes.extend([[str(datetime.timedelta(seconds=int(t*60))) for t in tpu] for tpu in GPUTimes])
+    print(mytimes)
 
-if __name__ == "__main__":
 
+def CoarseMeshPlot(Markers, Colors):
+    # Sparse Mesh
     nSmps = np.array([1, 10, 50, 100, 200, 500])
     GPUTimes = np.array([[48983.0, 55116.9, 102640.4, 187255.4, 330740.4, 759271.1], # 1 GPU
                          [52269.8, 53984.1, 82260.3, 142749.3, 223668.7, 505900.6], # 2 GPUs
@@ -126,14 +137,20 @@ if __name__ == "__main__":
                          [208469.8, 531083.1, 2441160.6, 4144606.4, 9777574.6, 20941943.7]]) / 6.0e4
     CPUNames = ['1 CPU', '12 CPUs', '24 CPUs']
 
-    plotDataArray = [PlotData(CPUNames[i], CPUTimes[i], nSmps) for i in range(len(CPUNames))]
-    plotDataArray.extend([PlotData(GPUNames[i], GPUTimes[i], nSmps) for i in range(len(GPUNames))])
+    plotDataArray = [PlotData(CPUNames[i], CPUTimes[i], nSmps, Markers[i], Colors[i]) for i in range(len(CPUNames))]
+    plotDataArray.extend([PlotData(GPUNames[i], GPUTimes[i], nSmps, Markers[3+i], Colors[3+i]) for i in range(len(GPUNames))])
     # PPlot(plotDataArray, 'Mesh of 5074 cells 2565 nodes', 'PerformanceCVFES.pdf', ibase=3)
     # TPlot(plotDataArray, 'Mesh of 5074 cells 2565 nodes', 'ComputingTimeCVFES.pdf', ibase=3)
     # SpeedUp(plotDataArray, nSmps)
 
+    xlim = [0.0, 80.0]
+    ylim = [0.0, 4000.0]
+    PPlot(plotDataArray, 'Scaling Results for Small Mesh', 'CoarsePerformGPUs.pdf', xlim, ylim, ibase=0)
 
+
+def MediumMeshPlot(Markers, Colors):
     # Fine Mesh
+    nSmps = np.array([1, 10, 50, 100, 200, 500])
     GPUTimes = np.array([[42002.5, 70975.8, 120105.6, 210177.3, 361385.2, 841459.0],
                          [59572.9, 61098.5, 106357.9, 172145.3, 344984.1, 731003.0],
                          #59341.3  61273.8  106127.0  172122.5  344972.7  730995.1
@@ -144,17 +161,24 @@ if __name__ == "__main__":
                          #56058.4  72756.5  107227.2  168282.0  307560.9  730005.1
                          #56229.1  72829.3  107247.6  168498.7  307535.5  729915.5
                          #56183.3  72602.8  107272.0  168538.4  307552.2  729890.7
+    GPUNames = ['1 GPU', '2 GPUs', '3 GPUs', '4 GPUs']
     CPUTimes = np.array([[1132922.2, 9734767.2, 46000219.5, 94498960.4, 222079906.0, 519162802.8],
                          [315593.9, 653607.3, 3329105.1, 7365001.1, 13305993.4, 34787364.0],
                          [341165.3, 847756.2, 3534784.9, 7151607.4, 13224270.9, 33563159.6]]) / 6.0e4
+    CPUNames = ['1 CPU', '12 CPUs', '24 CPUs']
 
-    plotDataArray = [PlotData(CPUNames[i], CPUTimes[i], nSmps) for i in range(len(CPUNames))]
-    plotDataArray.extend([PlotData(GPUNames[i], GPUTimes[i], nSmps) for i in range(len(GPUNames))])
+    plotDataArray = [PlotData(CPUNames[i], CPUTimes[i], nSmps, Markers[i], Colors[i]) for i in range(len(CPUNames))]
+    plotDataArray.extend([PlotData(GPUNames[i], GPUTimes[i], nSmps, Markers[3+i], Colors[3+i]) for i in range(len(GPUNames))])
     # PPlot(plotDataArray, 'Mesh of 15136 cells 7628 nodes', 'PerformanceCVFES_FineMesh.pdf', ibase=3)
     # TPlot(plotDataArray, 'Mesh of 15136 cells 7628 nodes', 'ComputingTimeCVFES_FineMesh.pdf', ibase=3)
     # SpeedUp(plotDataArray, nSmps)
 
+    xlim = [0.0, 80.0]
+    ylim = [0.0, 4000.0]
+    PPlot(plotDataArray, 'Scaling Results for Large Mesh', 'FinePerformGPUs.pdf', xlim, ylim, ibase=0)
 
+
+def FineMeshPlot():
     # More Fine Mesh
     GPUTimes = np.array([[72233.6, 143849.5, 503000.8, 982297.4, 1936421.7, 0.0],
                          [75770.5, 153928.7, 492586.9, 985086.3, 1853315.8, 4549083.2],
@@ -179,9 +203,20 @@ if __name__ == "__main__":
     # SpeedUp(plotDataArray, nSmps)
 
 
-    mytimes = [[str(datetime.timedelta(seconds=int(t*60))) for t in tpu] for tpu in CPUTimes]
-    # mytimes.extend([[str(datetime.timedelta(seconds=int(t*60))) for t in tpu] for tpu in GPUTimes])
-    print(mytimes)
-    exit(0)
+if __name__ == "__main__":
+
+    Markers = ['o', 'D', '^', '<', '*', '+', 'P']
+    Colors = ['b', 'r', 'm', 'k', 'g', 'y', 'c']
+
+    # CoarseMeshPlot(Markers, Colors)
+    MediumMeshPlot(Markers, Colors)
+
+
+
+
+
+
+
+
 
 
