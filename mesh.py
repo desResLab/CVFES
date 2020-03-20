@@ -13,6 +13,7 @@ import os.path
 # from os.path import splitext
 import sys
 from math import pi
+from math import sqrt
 
 from vtk.util.numpy_support import vtk_to_numpy
 from vtk.util.numpy_support import numpy_to_vtk
@@ -303,6 +304,42 @@ class FluidMesh(Mesh):
 
     def setInletVelocity(self, nNodes, velocity, normal):
         return (np.ones((nNodes, 3))*(velocity*normal)).ravel()
+
+    def calcInscribeDiameters(self):
+        """ Calculate the inscribe sphere diameter of the tetrohedron elements. """
+        nodes = self.nodes
+        elements = self.elementNodeIds
+        inscribeDiameters = self.inscribeDiameters = np.empty(self.nElements)
+
+        for iElm, elm in enumerate(elements):
+            # Get the edges need
+            OA = nodes[elm[1]] - nodes[elm[0]]
+            OB = nodes[elm[2]] - nodes[elm[0]]
+            OC = nodes[elm[3]] - nodes[elm[0]]
+            AB = nodes[elm[2]] - nodes[elm[1]]
+            AC = nodes[elm[3]] - nodes[elm[1]]
+            
+            # Get the volume of the element
+            volume = abs(OC[0]*(OA[1]*OB[2]-OA[2]*OB[1]) - OC[1]*(OA[0]*OB[2]-OA[2]*OB[0]) \
+                    + OC[2]*(OA[0]*OB[1]-OA[1]*OB[0])) / 6.0
+            # Get the surface area
+            area = sqrt((OA[1]*OC[2]-OA[2]*OC[1])**2 \
+                        + (OA[0]*OC[2]-OA[2]*OC[0])**2 \
+                        + (OA[0]*OC[1]-OA[1]*OC[0])**2) \
+                 + sqrt((OA[1]*OB[2]-OA[2]*OB[1])**2 \
+                        + (OA[0]*OB[2]-OA[2]*OB[0])**2 \
+                        + (OA[0]*OB[1]-OA[1]*OB[0])**2) \
+                 + sqrt((OB[1]*OC[2]-OB[2]*OC[1])**2 \
+                        + (OB[0]*OC[2]-OA[2]*OC[0])**2 \
+                        + (OB[0]*OC[1]-OA[1]*OC[0])**2) \
+                 + sqrt((AB[1]*AC[2]-AB[2]*AC[1])**2 \
+                        + (AB[0]*AC[2]-AB[2]*AC[0])**2 \
+                        + (AB[0]*AC[1]-AB[1]*AC[0])**2)
+            area = area * 0.5
+
+            # Calc the radius of the inscribed sphere
+            r = 6.0*volume/area
+            inscribeDiameters[iElm] = 2.0*r
 
     def Save(self, filename, counter, u, stress, uname='velocity'):
         """ Save the stress result of elements at time t with stress tensor of dim.

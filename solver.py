@@ -21,6 +21,7 @@ from physicsSolver import *
 from physicsSolverGPUs import *
 from generalizedAlphaSolver import *
 # from generalizedAlphaSolverRe import *
+from explicitVMSSolver import *
 from bdyStressExport import BdyStressExport
 
 # from math import floor
@@ -201,5 +202,20 @@ class TransientGeneralizedASolver(TransientSolver):
 
     def __initPhysicSolver__(self, comm, meshes, config):
         self.fluidSolver = GeneralizedAlphaFluidSolver(comm, meshes['lumen'], config)
+        self.solidSolver = GeneralizedAlphaSolidSolver(comm, meshes['wall'], config)
+
+
+""" For explicit VMS method:
+"""
+class ExplicitVMSSolver(TransientSolver):
+    """ Time looping style solver which employs the
+        explicit VMS method.
+    """
+
+    def __init__(self, comm, meshes, config):
+        TransientSolver.__init__(self, comm, meshes, config)
+
+    def __initPhysicSolver__(self, comm, meshes, config):
+        self.fluidSolver = ExplicitVMSSolver(comm, meshes['lumen'], config)
         self.solidSolver = GeneralizedAlphaSolidSolver(comm, meshes['wall'], config)
 
