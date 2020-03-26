@@ -171,7 +171,7 @@ def OptimizedExplicitVMSAssemble(
         for i in range(nPts):
             lLHS[i] = 0.0
             for j in range(4):
-                lRHS[i*4+j] = 0.0
+                lRHS[i,j] = 0.0
 
         Ve = getGlbDerivatives(nodes, eNIds, lDN, DN, jac, cof, invJac)
 
@@ -251,7 +251,7 @@ def OptimizedExplicitVMSAssemble(
         # Evaluate velocity sub-grid scales
         for i in range(nPts):
             for j in range(ndim):
-                nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_u[i]/dt - 1.0
+                nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_t[i]/dt - 1.0
 
         # Loop through Gaussian integration points and assemble
         for iGp in range(nGp):

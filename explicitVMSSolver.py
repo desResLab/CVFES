@@ -19,7 +19,7 @@ c2 = 2.0
 
 
 class ExplicitVMSSolver(PhysicsSolver):
-	"""Explicit VMS method."""
+    """Explicit VMS method."""
     
     def __init__(self, comm, mesh, config):
 
@@ -80,8 +80,8 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.coefs[4] = (ASS*np.amax(np.linalg.norm(du, axis=1)))**2
 
         # Assemble the LHS and RHS.
-        OptimizedExplicitVMSAssemble(self.mesh.nodes, self.mesh.elements,
-                                     du, p, hdu, hp, self.sdu, self.nsdu,
+        OptimizedExplicitVMSAssemble(self.mesh.nodes, self.mesh.elementNodeIds,
+                                     du, self.p, hdu, hp, self.sdu, self.nsdu,
                                      self.mesh.inscribeDiameters, self.f,
                                      self.lN, self.lDN, self.w, self.coefs,
                                      self.LHS, self.RHS)
@@ -90,7 +90,8 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.odu = self.du
         self.op = self.p
 
-        res = self.RHS / self.LHS
+        # res = self.RHS / self.LHS
+        res = np.divide(self.RHS, self.LHS, out=np.zeros_like(self.RHS), where=self.LHS!=0)
         res = res.reshape((self.mesh.nNodes, self.Dof))
         self.du = res[:,:3].ravel()
         self.p = res[:,-1].ravel()
@@ -103,9 +104,16 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.mesh.updateInletVelocity(t)
         # Combine the boundary condition at the start of each time step.
         for inlet in self.mesh.faces['inlet']:
-            dofs = self.sparseInfo.GenerateDofs(inlet.appNodes, 3)
+            dofs = self.GenerateDofs(inlet.appNodes, 3)
             self.du[dofs] = inlet.inletVelocity
 
-        dofs = self.sparseInfo.GenerateDofs(self.mesh.wall, 3)
+        dofs = self.GenerateDofs(self.mesh.wall, 3)
         self.du[dofs] = 0.0
+
+    def GenerateDofs(self, nodes, dof):
+        baseArray = np.arange(dof)
+        return np.array([node*dof+baseArray for node in nodes]).ravel()
+
+    def Save(self, filename, counter):
+        self.mesh.Save(filename, counter, self.du.reshape(self.mesh.nNodes, 3), self.p, 'velocity')
 

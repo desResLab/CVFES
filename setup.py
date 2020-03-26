@@ -22,6 +22,10 @@ ext_modules = [
         extra_link_args=['-fopenmp'],
     ),
     Extension(
+        "optimizedExplicitVMSAssemble",
+        ["optimizedExplicitVMSAssemble.pyx"],
+    ),
+    Extension(
         "bdyStressExport",
         ["bdyStressExport.pyx"],
     )

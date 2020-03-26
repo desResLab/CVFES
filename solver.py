@@ -207,7 +207,7 @@ class TransientGeneralizedASolver(TransientSolver):
 
 """ For explicit VMS method:
 """
-class ExplicitVMSSolver(TransientSolver):
+class TransientExplicitVMSSolver(TransientSolver):
     """ Time looping style solver which employs the
         explicit VMS method.
     """

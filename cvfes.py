@@ -80,7 +80,7 @@ class CVFES:
         solverSwitcher = {
             'transient generalized-a': TransientGeneralizedASolver,
             'transient': TransientSolver,
-            'explicit VMS': ExplicitVMSSolver
+            'explicit VMS': TransientExplicitVMSSolver
         }
 
         SolverClass = solverSwitcher.get(self.cvConfig.solver.method, None)
