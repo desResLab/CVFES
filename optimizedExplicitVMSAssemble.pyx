@@ -99,9 +99,9 @@ cdef void assembling(long[::1] eNIds, double[::1] lLHS, double[:,::1] lR,
     cdef int a, b
 
     for a in range(nPts):
-        for b in range(4):
-            LHS[a*4+b] += lLHS[a]
-            RHS[a*4+b] += lR[a,b]
+        for b in range(4): # Dof
+            LHS[eNIds[a]*4+b] += lLHS[a]
+            RHS[eNIds[a]*4+b] += lR[a,b]
 
 
 @cython.cdivision(True)
