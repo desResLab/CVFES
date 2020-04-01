@@ -145,7 +145,8 @@ class TransientSolver(Solver):
 
         self.fluidSolver = FluidSolver(comm, meshes['lumen'], config)
         # self.solidSolver = SolidSolver(comm, meshes['wall'], config)
-        # self.solidSolver = SolidSolver(comm, meshes['wall'], config, self.appPressures[self.restartTimestep])
+        # self.solidSolver = SolidSolver(comm, meshes['wall'], config,
+        #                                self.appPressures[self.restartTimestep])
 
         self.solidSolver = GPUSolidSolver(comm, meshes['wall'], config)
 

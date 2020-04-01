@@ -39,7 +39,7 @@ if __name__ == "__main__":
 
     flow = FlowCalc(stime, etime, dt, cycletime, eqn)
     flow[:,1] = -1000.0/60.0 * flow[:,1]
-    np.savetxt('../cfg/cylinderSparseInlet.flow', flow)
+    np.savetxt('../cfg/cylinderSparseInlet.flow', flow, fmt='%1.4e')
 
     plt.plot(flow[:,0], flow[:,1])
     plt.show()

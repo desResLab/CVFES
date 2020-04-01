@@ -138,6 +138,7 @@ def OptimizedExplicitVMSAssemble(
     cdef long[::1] eNIds = np.empty(nPts, dtype=long)
     cdef double[:,::1] DN = np.empty((ndim, nPts), dtype=np.float)
     cdef double[:,::1] av = np.zeros((nPts, ndim), dtype=np.float)
+    cdef double[:,::1] tau_av = np.zeros((nPts, ndim), dtype=np.float)
     cdef double[::1] tau_t = np.zeros(nPts, dtype=np.float)
     cdef double[::1] ah = np.zeros(ndim, dtype=np.float)
     cdef double[::1] duh = np.zeros(ndim, dtype=np.float)
@@ -242,9 +243,10 @@ def OptimizedExplicitVMSAssemble(
         for i in range(nPts):
             for j in range(ndim):
                 av[i,j] = hdu[eNIds[i],j] + sdu[iElm,i,j]
+                tau_av[i,j] = du[eNIds[i],j] + sdu[iElm,i,j]
 
             # Calculate the stabilization parameters tau
-            norm_a = sqrt(av[i,0]**2.0 + av[i,1]**2.0 + av[i,2]**2.0)
+            norm_a = sqrt(tau_av[i,0]**2.0 + tau_av[i,1]**2.0 + tau_av[i,2]**2.0)
             tau_u = 1.0 / (c1*nu/(h*h) + c2*norm_a/h)
             tau_t[i] = 1.0 / (1.0/dt + 1.0/tau_u)
 

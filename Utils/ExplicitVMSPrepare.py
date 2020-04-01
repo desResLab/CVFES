@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+from math import sqrt, log10, floor
 from AortaFlowCalculate import FlowCalc
 
 from vtk.util.numpy_support import vtk_to_numpy
@@ -8,17 +10,18 @@ import vtk
 """ Calculate the c value based on inlet velocity function/plot.
     Then calculate the artificial compressible coefficient (inv-epsilon) and
     time step based on the c value.
+    Model: cylinder
 """
 
 scale = 2.0
-maxInletVelocity = 14.0
+maxInletVelocity = 18.58
 # inletfunc = '2.759e4*t**4-1.655e4*t**3+2.548e3*t**2-1.9565e1*t+1.5 if t>=0.0 and t<0.28 else -25.0*(t-0.28)+2.0 if t<=0.3 else 1.5-20.0*(t-0.3) if t<=0.35 else 0.5+5.0*(t-0.35) if t<=0.65 else -5.0*(t-0.65)+2.0 if t<=0.75 else 1.5'
 lumenfile = 'Examples/CylinderProject/mesh-complete/mesh-complete.mesh.vtu'
 
 
 def ReadMesh(filename):
     
-    reader = vtk.vtkXMLPolyDataReader() if meshConfig.file_path.endswith('vtp') else vtk.vtkXMLUnstructuredGridReader()
+    reader = vtk.vtkXMLPolyDataReader() if filename.endswith('vtp') else vtk.vtkXMLUnstructuredGridReader()
     reader.SetFileName(filename)
     reader.Update()
 
@@ -31,7 +34,7 @@ def ReadMesh(filename):
 
     # Set the element groups, will be updated to sub-group after partition.
     nElements = polyDataModel.GetNumberOfCells()
-    elementNodeIds = np.empty((nElements, 4)) # 4 nodes for tetrohedron
+    elementNodeIds = np.empty((nElements, 4), dtype=int) # 4 nodes for tetrohedron
     for iElm in range(nElements):
         vtkCell = polyDataModel.GetCell(iElm)
         for iNode in range(4):
@@ -83,6 +86,20 @@ def CValue(maxInletVelocity, scale):
     return ASS*scale*maxInletVelocity
 
 
+def RoundDown(dt):
+    
+    for scale in range(1,11):
+        if dt * 10.0**scale >= 1:
+            break
+
+    return 10.0**(-scale), int(dt * 10.0**scale) * 10.0**(-scale)
+
+
+def round_to_1(x):
+    scale = -int(floor(log10(abs(x))))
+    return round(10.0**-scale, scale), round(x, scale)
+
+
 if __name__ == '__main__':
 
     c = CValue(maxInletVelocity, scale)
@@ -95,6 +112,9 @@ if __name__ == '__main__':
     inscribeDiameters = CalcInscribeDiameters(nodes, elementNodeIds)
     dt = np.amin(inscribeDiameters) / c
     print('The time step is {}'.format(dt))
+    # dt_scale, dt = RoundDown(dt)
+    dt_scale, dt = round_to_1(dt)
+    print('Use time step {}, {}'.format(dt, dt_scale))
 
     # Run inlet flow calculator.
     stime = 0.0
@@ -102,9 +122,9 @@ if __name__ == '__main__':
     cycletime = 0.75
     eqn = '2.759e4*t**4-1.655e4*t**3+2.548e3*t**2-1.9565e1*t+1.5 if t>=0.0 and t<0.28 else -25.0*(t-0.28)+2.0 if t<=0.3 else 1.5-20.0*(t-0.3) if t<=0.35 else 0.5+5.0*(t-0.35) if t<=0.65 else -5.0*(t-0.65)+2.0 if t<=0.75 else 1.5'
 
-    flow = FlowCalc(stime, etime, dt, cycletime, eqn)
+    flow = FlowCalc(stime, etime, dt_scale, cycletime, eqn)
     flow[:,1] = -1000.0/60.0 * flow[:,1]
-    np.savetxt('../cfg/cylinderExplicitVMSInlet.flow', flow)
+    np.savetxt('cfg/cylinderExplicitVMSInlet.flow', flow, fmt='%1.4e')
 
     plt.plot(flow[:,0], flow[:,1])
     plt.show()

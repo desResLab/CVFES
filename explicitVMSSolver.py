@@ -76,8 +76,9 @@ class ExplicitVMSSolver(PhysicsSolver):
         hdu = hdu.reshape((self.mesh.nNodes, 3))
 
         # Calculate the invEpsilon for artificial incompressible coef.
-        ASS = 5.0
-        self.coefs[4] = (ASS*np.amax(np.linalg.norm(du, axis=1)))**2
+        # ASS = 5.0
+        # self.coefs[4] = (ASS*np.amax(np.linalg.norm(du, axis=1)))**2
+        self.coefs[4] = 34521.64
 
         # Assemble the LHS and RHS.
         OptimizedExplicitVMSAssemble(self.mesh.nodes, self.mesh.elementNodeIds,
@@ -89,6 +90,9 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Solve
         self.odu = self.du
         self.op = self.p
+
+        self.sdu = self.nsdu
+        self.nsdu = zeros_like(self.sdu)
 
         # res = self.RHS / self.LHS
         res = np.divide(self.RHS, self.LHS, out=np.zeros_like(self.RHS), where=self.LHS!=0)
