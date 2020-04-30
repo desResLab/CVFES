@@ -92,7 +92,7 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.op = self.p
 
         self.sdu = self.nsdu
-        self.nsdu = zeros_like(self.sdu)
+        self.nsdu = np.zeros_like(self.sdu)
 
         # res = self.RHS / self.LHS
         res = np.divide(self.RHS, self.LHS, out=np.zeros_like(self.RHS), where=self.LHS!=0)

@@ -313,7 +313,7 @@ def OptimizedExplicitVMSAssemble(
             sduh[1] = sdu[iElm,0,1]*lN[iGp,0] + sdu[iElm,1,1]*lN[iGp,1] \
                     + sdu[iElm,2,1]*lN[iGp,2] + sdu[iElm,3,1]*lN[iGp,3]
             sduh[2] = sdu[iElm,0,2]*lN[iGp,0] + sdu[iElm,1,2]*lN[iGp,1] \
-                    + sdu[iElm,2,2]*lN[iGp,2] + sdu[iElm,2,2]*lN[iGp,3]
+                    + sdu[iElm,2,2]*lN[iGp,2] + sdu[iElm,3,2]*lN[iGp,3]
             # ah dot GradHu
             ahGradHu[0] = ah[0]*gradHu[0,0] + ah[1]*gradHu[0,1] + ah[2]*gradHu[0,2]
             ahGradHu[1] = ah[0]*gradHu[1,0] + ah[1]*gradHu[1,1] + ah[2]*gradHu[1,2]

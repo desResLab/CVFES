@@ -162,7 +162,7 @@ class TransientSolver(Solver):
         self.etrac = np.load('{}{}.npy'.format(modelname, self.nt))
 
         for timeStep in range(self.restartTimestep, self.nTimeSteps):
-            t = self.t[timeStep]
+            t = round(self.t[timeStep], 4)
             dt = self.t[timeStep+1] - self.t[timeStep]
             # Solve for the fluid part.
             self.fluidSolver.Solve(t, dt)

@@ -252,7 +252,10 @@ class FluidMesh(Mesh):
             elmNIds = inletFace.elementNodeIds
             v = np.array([nodes[inlet[elmNIds[0,1]]] - nodes[inlet[elmNIds[0,0]]],
                           nodes[inlet[elmNIds[0,2]]] - nodes[inlet[elmNIds[0,0]]]])
-            elmNormV = np.cross(v[0], v[1])
+            # elmNormV = np.cross(v[0], v[1])
+            elmNormV = np.array([v[0,1]*v[1,2]-v[0,2]*v[1,1],
+                                 -v[0,0]*v[1,2]+v[0,2]*v[1,0],
+                                 v[0,0]*v[1,1]-v[0,1]*v[1,0]])
             inletFace.normal = elmNormV / np.linalg.norm(elmNormV)
 
         # Set the inlet to be appliable inlet glbNodeIds
