@@ -130,7 +130,7 @@ def OptimizedExplicitVMSAssemble(
     cdef double Ve
     cdef double wGp
     cdef double norm_a
-    cdef double tau_u
+    cdef double tau_u, Ru
     cdef double trGradU, trGradHu
     cdef double tmpM, varT1, varT2
     cdef double ph, hph
@@ -253,7 +253,8 @@ def OptimizedExplicitVMSAssemble(
         # Evaluate velocity sub-grid scales
         for i in range(nPts):
             for j in range(ndim):
-                nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_t[i]/dt - 1.0
+                Ru = tau_t[i]*(av[i,0]*gradU[j,0] + av[i,1]*gradU[j,1] + av[i,2]*gradU[j,2] + gradP[j])
+                nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_t[i]/dt - Ru
 
         # Loop through Gaussian integration points and assemble
         for iGp in range(nGp):
