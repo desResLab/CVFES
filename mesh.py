@@ -69,18 +69,23 @@ class Face:
         #     self.appNodes = None
 
     def readinMesh(self, file_path, tglbNodeIds):
-            reader = vtk.vtkXMLPolyDataReader() if file_path.endswith('vtp') else vtk.vtkXMLUnstructuredGridReader()
-            reader.SetFileName(file_path)
-            reader.Update()
+        reader = vtk.vtkXMLPolyDataReader() if file_path.endswith('vtp') else vtk.vtkXMLUnstructuredGridReader()
+        reader.SetFileName(file_path)
+        reader.Update()
 
-            polyDataModel = reader.GetOutput()
-            # Find the indices of the face nodes.
-            glbNodeIds = vtk_to_numpy(polyDataModel.GetPointData().GetArray('GlobalNodeID'))
-            # self.glbNodeIds -= 1
-            self.glbNodeIds = np.where(np.in1d(tglbNodeIds, glbNodeIds))[0]
-            # Add in elements info, only used by 'inlet' face now.
-            self.nElements = polyDataModel.GetNumberOfCells()
-            self.elements = np.array([ElementOfFace(polyDataModel.GetCell(i)) for i in range(self.nElements)])
+        polyDataModel = reader.GetOutput()
+        # Find the indices of the face nodes.
+        glbNodeIds = vtk_to_numpy(polyDataModel.GetPointData().GetArray('GlobalNodeID'))
+        # self.glbNodeIds -= 1
+        # self.glbNodeIds = np.where(np.in1d(tglbNodeIds, glbNodeIds))[0]
+        self.glbNodeIds = self.adjustNodeIds(glbNodeIds, tglbNodeIds)
+        # Add in elements info, only used by 'inlet' face now.
+        self.nElements = polyDataModel.GetNumberOfCells()
+        self.elements = np.array([ElementOfFace(polyDataModel.GetCell(i)) for i in range(self.nElements)])
+
+    def adjustNodeIds(self, glbNodeIds, tglbNodeIds):
+        nodeIds = np.array([np.where(tglbNodeIds==i)[0] for i in glbNodeIds]).reshape(glbNodeIds.shape)
+        return nodeIds
 
 
 class Mesh:
@@ -300,6 +305,7 @@ class FluidMesh(Mesh):
             volumeVelocity = self.inletVelocity[self.inletVelocity[:,0]==t, 1]
         else:
             volumeVelocity = eval(self.inletVelocity)
+        
         for inletFace in self.faces['inlet']:
             nInlet = len(inletFace.appNodes)
             velocity = volumeVelocity / inletFace.inletArea
