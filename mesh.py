@@ -14,6 +14,7 @@ import os.path
 import sys
 from math import pi
 from math import sqrt
+from parabolicVelocityProfile import ParabolicVelocityProfile
 
 from vtk.util.numpy_support import vtk_to_numpy
 from vtk.util.numpy_support import numpy_to_vtk
@@ -239,10 +240,13 @@ class FluidMesh(Mesh):
         self.wall = np.array([w.glbNodeIds for w in self.faces['wall']]).ravel()
 
         for inletFace in self.faces['inlet']:
+            nodes = self.nodes
+            elmNIds = inletFace.elementNodeIds
             inlet = inletFace.glbNodeIds
-            flags = np.isin(inlet, self.wall)
+            
+            inletFace.bdyFlags = np.isin(inlet, self.wall)
             # intersectNodes = inlet[flags]
-            inletFace.appNodes = inlet[~flags]
+            inletFace.appNodes = inlet[~inletFace.bdyFlags]
 
             # Calculate the inlet area used for calculating BC velocity.
             inletArea = 0.0
@@ -252,9 +256,11 @@ class FluidMesh(Mesh):
                 inletArea += elm.area
             inletFace.inletArea = inletArea
 
+            # Calculate the inlet paraboic velocity profile. (Prepare)
+            inletBdy = np.arange(len(inlet))[inletFace.bdyFlags]
+            inletFace.u, inletFace.int_u = ParabolicVelocityProfile(elmNIds, nodes, inlet, inletBdy)
+
             # Calculate the unit norm vector of this inlet.
-            nodes = self.nodes
-            elmNIds = inletFace.elementNodeIds
             v = np.array([nodes[inlet[elmNIds[0,1]]] - nodes[inlet[elmNIds[0,0]]],
                           nodes[inlet[elmNIds[0,2]]] - nodes[inlet[elmNIds[0,0]]]])
             # elmNormV = np.cross(v[0], v[1])
@@ -276,6 +282,8 @@ class FluidMesh(Mesh):
 
     def setBoundaryCondtions(self, bdyCondConfig):
         # Set the inlet velocity BC.
+        self.parabolicInlet = bdyCondConfig.parabolicInlet
+
         if isinstance(bdyCondConfig.inletVelocity, str):
             if bdyCondConfig.inletVelocity.endswith('.flow'):
                 self.inletVelocity = np.loadtxt(bdyCondConfig.inletVelocity)
@@ -287,9 +295,7 @@ class FluidMesh(Mesh):
             # Set up the constant inlet velocity used for all time steps.
             volumeVelocity = bdyCondConfig.inletVelocity
             for inletFace in self.faces['inlet']:
-                nInlet = len(inletFace.appNodes)
-                velocity = volumeVelocity / inletFace.inletArea
-                inletFace.inletVelocity = self.setInletVelocity(nInlet, velocity, inletFace.normal) # z-axis
+                self.calcInletVelocity(volumeVelocity, inletFace)
 
         # Set the outlet Natural BC.
         # TODO:: Find out how to Apply Natrual BC !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -307,12 +313,16 @@ class FluidMesh(Mesh):
             volumeVelocity = eval(self.inletVelocity)
         
         for inletFace in self.faces['inlet']:
-            nInlet = len(inletFace.appNodes)
-            velocity = volumeVelocity / inletFace.inletArea
-            inletFace.inletVelocity = self.setInletVelocity(nInlet, velocity, inletFace.normal) # z-axis
+            self.calcInletVelocity(volumeVelocity, inletFace)
 
-    def setInletVelocity(self, nNodes, velocity, normal):
-        return (np.ones((nNodes, 3))*(velocity*normal)).ravel()
+    def calcInletVelocity(self, volumeVelocity, inletFace):
+        if self.parabolicInlet:
+            vvC = volumeVelocity / inletFace.int_u
+            inletVelocity = np.outer(vvC*inletFace.u, inletFace.normal)
+            inletFace.inletVelocity = inletVelocity[~inletFace.bdyFlags,:].ravel()
+        else:
+            inletVelocity = (volumeVelocity / inletFace.inletArea) * inletFace.normal
+            inletFace.inletVelocity = (np.ones((len(inletFace.appNodes), 3))*inletVelocity).ravel()
 
     def calcInscribeDiameters(self):
         """ Calculate the inscribe sphere diameter of the tetrohedron elements. """

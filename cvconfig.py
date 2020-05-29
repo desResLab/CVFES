@@ -89,6 +89,9 @@ class BoundaryConditionsConfig(ConditionConfig):
         if name == 'fluid':
             self.inletVelocity = self.getProp(bdyCndSection, 'inlet_velocity')
             self.outletH = self.getProp(bdyCndSection, 'outlet_h')
+            self.parabolicInlet = False
+            if 'parabolic_inlet' in bdyCndSection:
+                self.parabolicInlet = bdyCndSection.as_bool('parabolic_inlet')
         else:
             self.bdyDisplacement = self.getProp(bdyCndSection, 'displacement')
 

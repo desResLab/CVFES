@@ -28,6 +28,10 @@ ext_modules = [
     Extension(
         "bdyStressExport",
         ["bdyStressExport.pyx"],
+    ),
+    Extension(
+        "optimizedParabolicVelocityProfile",
+        ["optimizedParabolicVelocityProfile.pyx"],
     )
 ]
 
