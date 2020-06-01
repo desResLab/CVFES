@@ -43,3 +43,5 @@ if __name__ == "__main__":
 
     plt.plot(flow[:,0], flow[:,1])
     plt.show()
+
+    print(np.mean(flow[:,1])) # -66.59163473615723

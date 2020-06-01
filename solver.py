@@ -164,9 +164,9 @@ class TransientSolver(Solver):
         for timeStep in range(self.restartTimestep, self.nTimeSteps):
             t = round(self.t[timeStep], 4)
             dt = self.t[timeStep+1] - self.t[timeStep]
+
             # Solve for the fluid part.
             self.fluidSolver.Solve(t, dt)
-
             # # TODO:: Remember to delete after combining the solid and fluid part.
             # BdyStressExport(self.lumenNodes, self.elmCnnWall, self.elmWallIndicesPtr,
             #                 self.elmWallIndices, self.wallElements, self.wallGlbNodeIds,
@@ -177,9 +177,9 @@ class TransientSolver(Solver):
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
             # TODO:: Remeber to change this when combining the solid and fluid part together.
-            traction = self.PrepareTraction(t, dt)
-            self.solidSolver.ApplyTraction(traction)
-            # self.solidSolver.ApplyPressure(self.appPressures)
+            # traction = self.PrepareTraction(t, dt)
+            # self.solidSolver.ApplyTraction(traction)
+            # # self.solidSolver.ApplyPressure(self.appPressures)
             self.solidSolver.Solve(t, dt)
             # Refresh the fluid solver's context
             # before next loop start.
@@ -189,6 +189,11 @@ class TransientSolver(Solver):
                 self.fluidSolver.Save(self.saveStressFilename, timeStep+1)
                 # self.solidSolver.Save(self.saveStressFilename, timeStep+1)
                 self.solidSolver.SaveDisplacement(self.saveStressFilename, timeStep+1)
+
+            # Tell if flow becomes steady with constant inflow.
+            if self.fluidSolver.Steady():
+                print('Fluid reaches steady at time {}s'.format(t))
+                break
 
 
 """ For generalized-a method:

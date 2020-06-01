@@ -80,6 +80,9 @@ class PhysicsSolver:
     def SaveDisplacement(self, filename, counter):
         pass
 
+    def Steady(self):
+        return False
+
 
 class FluidSolver(PhysicsSolver):
 

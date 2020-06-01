@@ -308,6 +308,9 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
     def Save(self, filename, counter):
         self.mesh.Save(filename, counter, self.du.reshape(self.mesh.nNodes, 3), self.p, 'velocity')
 
+    def Steady(self):
+        return np.allclose(self.du, self.duP) and np.allclose(self.p, self.pP)
+
 
 class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
 
