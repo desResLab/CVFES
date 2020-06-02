@@ -102,11 +102,11 @@ def OptimizedParabolicVelocityProfile(
         inv_det = 1.0 / (x13*y23 - x32*y31)
 
         DN[0,0] = y23*inv_det
-        DN[1,0] = y31*inv_det
-        DN[0,1] = x32*inv_det
+        DN[1,0] = x32*inv_det
+        DN[0,1] = y31*inv_det
         DN[1,1] = x13*inv_det
-        DN[0,2] = - (y23+x32)*inv_det
-        DN[1,2] = - (y31+x13)*inv_det
+        DN[0,2] = - (y23+y31)*inv_det
+        DN[1,2] = - (x32+x13)*inv_det
 
         # Calculate k, f and assemble.
         # f = 1.0 is hard coded.
