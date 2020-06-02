@@ -198,6 +198,10 @@ class CVConfig:
         # Config the result filename.
         self.solver.saveStressFilename = config['save_stress_filename']
         self.solver.saveResNum = config.as_int('save_result_num')
+        # Config the exported stress file name for segregated solver.
+        self.solver.exportBdyStressFilename = 'BdyStress'
+        if 'export_stress_filename' in config:
+            self.solver.exportBdyStressFilename = config['export_stress_filename']
 
         # Config the number of samples being used in Solid part.
         self.meshes['wall'].nSmp = self.nSmp

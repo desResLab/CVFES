@@ -28,6 +28,8 @@ from optimizedAssemble import OptimizedFluidAssemble
 # from optimizedFluidAssemble import OptimizedFluidAssemble
 from optimizedFluidAssemble import OptimizedFluidBoundaryAssemble
 from optimizedFluidAssemble import Scaling
+
+from bdyStressExport import BdyStressExport
 import sys
 
 __author__ = "Xue Li"
@@ -313,33 +315,57 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
 
 class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
-
+""" Generalized-alpha solver is a fluid part only solver used for
+    the segregated solution, so the solid solver here is used for
+    export the stress result from fluid solver.
+"""
+    
     def __init__(self, comm, mesh, config):
         GeneralizedAlphaSolver.__init__(self, comm, mesh, config)
 
-        # Initialize the context.
-        self.du = mesh.iniDu # velocity
-        self.u = mesh.iniU # displacement
+        # Remember the export filename.
+        self.exportFilename = config.exportBdyStressFilename
+        self.timeStep = 0
 
-        self.beta = 0.25 * (1 + self.alpha_f - self.alpha_m)**2
+        # Initialize the neighborhood info used for export
+        # stress from fuild solver.
+        self.lumenWallNodeIds = None # identify wall nodes on lumen border
+        self.lumenWallElements = None # identify lumen elements attached to the wall
+
+
+    def RefreshContext(self, physicSolver):
+        wallStress = np.zeros((self.mesh.nNodes, 3), dtype=np.float)
+
+        if self.lumenWallElements is None:
+            self.InitBdyStressExport(physicSolver.mesh)
+
+        BdyStressExport(physicSolver.mesh.nodes, self.lumenWallElements,
+                        self.lumenWallNodeIds, self.mesh.nodes, self.mesh.elementNodeIds,
+                        physicSolver.du.reshape(physicSolver.mesh.nNodes, 3),
+                        physicSolver.p, physicSolver.lDN, wallStress)
+        
+        np.save('{}{}'.format(self.exportFilename, self.timeStep), wallStress)
+
+
+    def InitBdyStressExport(self, lumen):
+        wall = self.mesh
+
+        # Identify wall nodes on lumen border.
+        sorter = np.argsort(lumen.glbNodeIds)
+        self.lumenWallNodeIds = sorter[np.searchsorted(lumen.glbNodeIds, wall.glbNodeIds, sorter=sorter)]
+
+        # Identify elements attached on the wall.
+        self.lumenWallElements = np.empty((wall.nElements, 4), dtype=int)
+        for iWallElm in range(wall.nElements):
+            for iLumenElm in range(lumen.nElements):
+                if np.sum(np.in1d(lumen.elementNodeIds[iLumenElm], self.lumenWallNodeIds[wall.elementNodeIds[iWallElm]])) == 3:
+                    self.lumenWallElements[iWallElm,:] = lumen.elementNodeIds[iLumenElm]
+                    break
+
 
     def ApplyTraction(self, appTraction):
         pass
 
-    # def RefreshContext(self, physicSolver):
-    #     # TODO:: Solid is the boundary of the fluid part, cannot do this assignment directly!
-    #     self.ddu = physicSolver.ddu
-    #     self.du = physicSolver.du
-    #     self.p = physicSolver.p
+    def Solve(self, t, dt):
+        self.timeStep += 1
 
-    # def Predict(self):
-    #     # Reset the previous context to current one to start a new loop.
-    #     # The xP represent previous value.
-    #     self.uP = self.u
-
-    #     # predict d.
-    #     self.u = self.uP + self.du * self.dt + (self.gamma*0.5 - self.beta)/(self.gamma - 1) * self.ddu * (self.dt ** 2)
-
-    # def Initialize(self):
-
-    #     self.interU = (1-self.alpha_f)*self.uP + self.alpha_f*self.u

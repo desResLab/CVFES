@@ -85,17 +85,18 @@ cdef double getGlbDerivatives(double[:,::1] nodes, long[::1] eNIds,
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void getSurfaceNormal(double[:,::1] nodes, long[::1] eNIds, long[::1] wallGlbNodeIds,
+cdef void getSurfaceNormal(double[:,::1] nodes, long[::1] eNIds,
                            double[:,::1] edges, double[:,::1] T):
 
     cdef double edgenorm = 0.0
+    cdef double area = 0.0
 
-    edges[0,0] = nodes[wallGlbNodeIds[eNIds[2]],0] - nodes[wallGlbNodeIds[eNIds[1]],0]
-    edges[0,1] = nodes[wallGlbNodeIds[eNIds[2]],1] - nodes[wallGlbNodeIds[eNIds[1]],1]
-    edges[0,2] = nodes[wallGlbNodeIds[eNIds[2]],2] - nodes[wallGlbNodeIds[eNIds[1]],2]
-    edges[1,0] = nodes[wallGlbNodeIds[eNIds[0]],0] - nodes[wallGlbNodeIds[eNIds[2]],0]
-    edges[1,1] = nodes[wallGlbNodeIds[eNIds[0]],1] - nodes[wallGlbNodeIds[eNIds[2]],1]
-    edges[1,2] = nodes[wallGlbNodeIds[eNIds[0]],2] - nodes[wallGlbNodeIds[eNIds[2]],2]
+    edges[0,0] = nodes[eNIds[2],0] - nodes[eNIds[1],0]
+    edges[0,1] = nodes[eNIds[2],1] - nodes[eNIds[1],1]
+    edges[0,2] = nodes[eNIds[2],2] - nodes[eNIds[1],2]
+    edges[1,0] = nodes[eNIds[0],0] - nodes[eNIds[2],0]
+    edges[1,1] = nodes[eNIds[0],1] - nodes[eNIds[2],1]
+    edges[1,2] = nodes[eNIds[0],2] - nodes[eNIds[2],2]
 
     edgenorm = sqrt(edges[0,0]*edges[0,0] + edges[0,1]*edges[0,1] + edges[0,2]*edges[0,2])
     # edgenorm = 1.0 / edgenorm
@@ -118,102 +119,94 @@ cdef void getSurfaceNormal(double[:,::1] nodes, long[::1] eNIds, long[::1] wallG
     T[2,1] = T[0,2]*T[1,0] - T[0,0]*T[1,2] # cy = azbx - axbz
     T[2,2] = T[0,0]*T[1,1] - T[0,1]*T[1,0] # cz = axby - aybx
 
+    # calculate the area of the triangle
+    area = (edges[0,1]*edges[1,2]-edges[0,2]*edges[1,1])**2 +\
+           (edges[0,0]*edges[1,2]-edges[0,2]*edges[1,0])**2 +\
+           (edges[0,0]*edges[1,1]-edges[0,1]*edges[1,0])**2
+    return sqrt(area)
+
 
 # elements - elements in the whole model that contains nodes on the wall/shell.
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def BdyStressExport(double[:,::1] nodes, long[:,::1] elements, long[::1] elmWallIndicesPtr,
-                    long[::1] elmWallIndices, long[:,::1] wallElements, long[::1] wallGlbNodeIds,
-                    double[:,::1] interU, double[::1] p,
-                    double[:,::1] lDN, double[:,::1] wallStress):
+def BdyStressExport(double[:,::1] lumenNodes, long[:,::1] lumenElements,
+                    long[::1] lumenWallNodeIds, double[:,::1] wallNodes, long[:,::1] wallElements,
+                    double[:,::1] du, double[::1] p, double[:,::1] lDN, double[:,::1] wallStress):
 
-    cdef long nElms = elements.shape[0]
-    cdef long nWallElms = wallElements.shape[0]
-    cdef long nWallNodes = wallGlbNodeIds.shape[0]
+    cdef long nElms = wallElements.shape[0]
+    cdef long nWallNodes = lumenWallNodeIds.shape[0]
 
     cdef long nPts = 4 # elements.shape[1]
     cdef long ndim = 3 # nodes.shape[1]
 
+    # For calculate the fluid/lumen element stress tensor.
     cdef long[::1] eNIds = np.empty(nPts, dtype=long)
     cdef double[:,::1] DN = np.empty((ndim, nPts), dtype=np.float)
     cdef double[:,::1] gradUh = np.empty((ndim, ndim), dtype=np.float)
-    cdef double[:,:,::1] wallStressTensor = np.zeros((nWallNodes, ndim, ndim), dtype=np.float)
-    cdef double[::1] nWallStressCmpnt = np.zeros(nWallNodes, dtype=np.float)
+    cdef double[:,:,::1] wallStressTensor = np.zeros((ndim, ndim), dtype=np.float)
+    # For calculate the wall surface normal.
     cdef long[::1] eWallNIds = np.empty(3, dtype=long)
     cdef double[:,::1] T = np.empty((3, 3), dtype=np.float)
     cdef double[:,::1] edges = np.empty((2,3), dtype=np.float)
     cdef double[:,::1] normals = np.zeros((nWallNodes, ndim), dtype=np.float)
-    cdef double[::1] nNormalCmpnt = np.zeros(nWallNodes, dtype=np.float)
+    cdef double[::1] parT = np.zeros(ndim, dtype=np.float)
 
     cdef double jac[3][3]
     cdef double invJac[3][3]
     cdef double cof[3][3]
 
     cdef double mu = 0.04
+    cdef double Ae = 0.0
 
     cdef long iElm
-    cdef long iNode, nodeId
-    cdef int i, j, a
+    cdef int i, j
 
     for iElm in range(nElms):
 
         for i in range(nPts):
-            eNIds[i] = elements[iElm,i]
+            eNIds[i] = lumenElements[iElm,i]
 
-        getGlbDerivatives(nodes, eNIds, lDN, DN, jac, cof, invJac)
+        getGlbDerivatives(lumenNodes, eNIds, lDN, DN, jac, cof, invJac)
 
         # gradUh
-        gradUh[0,0] = interU[eNIds[0],0]*DN[0,0] + interU[eNIds[1],0]*DN[0,1] \
-                        + interU[eNIds[2],0]*DN[0,2] + interU[eNIds[3],0]*DN[0,3]
-        gradUh[0,1] = interU[eNIds[0],0]*DN[1,0] + interU[eNIds[1],0]*DN[1,1] \
-                        + interU[eNIds[2],0]*DN[1,2] + interU[eNIds[3],0]*DN[1,3]
-        gradUh[0,2] = interU[eNIds[0],0]*DN[2,0] + interU[eNIds[1],0]*DN[2,1] \
-                        + interU[eNIds[2],0]*DN[2,2] + interU[eNIds[3],0]*DN[2,3]
-        gradUh[1,0] = interU[eNIds[0],1]*DN[0,0] + interU[eNIds[1],1]*DN[0,1] \
-                        + interU[eNIds[2],1]*DN[0,2] + interU[eNIds[3],1]*DN[0,3]
-        gradUh[1,1] = interU[eNIds[0],1]*DN[1,0] + interU[eNIds[1],1]*DN[1,1] \
-                        + interU[eNIds[2],1]*DN[1,2] + interU[eNIds[3],1]*DN[1,3]
-        gradUh[1,2] = interU[eNIds[0],1]*DN[2,0] + interU[eNIds[1],1]*DN[2,1] \
-                        + interU[eNIds[2],1]*DN[2,2] + interU[eNIds[3],1]*DN[2,3]
-        gradUh[2,0] = interU[eNIds[0],2]*DN[0,0] + interU[eNIds[1],2]*DN[0,1] \
-                        + interU[eNIds[2],2]*DN[0,2] + interU[eNIds[3],2]*DN[0,3]
-        gradUh[2,1] = interU[eNIds[0],2]*DN[1,0] + interU[eNIds[1],2]*DN[1,1] \
-                        + interU[eNIds[2],2]*DN[1,2] + interU[eNIds[3],2]*DN[1,3]
-        gradUh[2,2] = interU[eNIds[0],2]*DN[2,0] + interU[eNIds[1],2]*DN[2,1] \
-                        + interU[eNIds[2],2]*DN[2,2] + interU[eNIds[3],2]*DN[2,3]
+        gradUh[0,0] = du[eNIds[0],0]*DN[0,0] + du[eNIds[1],0]*DN[0,1] \
+                        + du[eNIds[2],0]*DN[0,2] + du[eNIds[3],0]*DN[0,3]
+        gradUh[0,1] = du[eNIds[0],0]*DN[1,0] + du[eNIds[1],0]*DN[1,1] \
+                        + du[eNIds[2],0]*DN[1,2] + du[eNIds[3],0]*DN[1,3]
+        gradUh[0,2] = du[eNIds[0],0]*DN[2,0] + du[eNIds[1],0]*DN[2,1] \
+                        + du[eNIds[2],0]*DN[2,2] + du[eNIds[3],0]*DN[2,3]
+        gradUh[1,0] = du[eNIds[0],1]*DN[0,0] + du[eNIds[1],1]*DN[0,1] \
+                        + du[eNIds[2],1]*DN[0,2] + du[eNIds[3],1]*DN[0,3]
+        gradUh[1,1] = du[eNIds[0],1]*DN[1,0] + du[eNIds[1],1]*DN[1,1] \
+                        + du[eNIds[2],1]*DN[1,2] + du[eNIds[3],1]*DN[1,3]
+        gradUh[1,2] = du[eNIds[0],1]*DN[2,0] + du[eNIds[1],1]*DN[2,1] \
+                        + du[eNIds[2],1]*DN[2,2] + du[eNIds[3],1]*DN[2,3]
+        gradUh[2,0] = du[eNIds[0],2]*DN[0,0] + du[eNIds[1],2]*DN[0,1] \
+                        + du[eNIds[2],2]*DN[0,2] + du[eNIds[3],2]*DN[0,3]
+        gradUh[2,1] = du[eNIds[0],2]*DN[1,0] + du[eNIds[1],2]*DN[1,1] \
+                        + du[eNIds[2],2]*DN[1,2] + du[eNIds[3],2]*DN[1,3]
+        gradUh[2,2] = du[eNIds[0],2]*DN[2,0] + du[eNIds[1],2]*DN[2,1] \
+                        + du[eNIds[2],2]*DN[2,2] + du[eNIds[3],2]*DN[2,3]
 
-        for a in range(elmWallIndicesPtr[iElm], elmWallIndicesPtr[iElm+1]):
-            nodeId = elmWallIndices[a]
-            nWallStressCmpnt[nodeId] += 1.0
-            for i in range(3):
-                for j in range(3):
-                    wallStressTensor[nodeId,i,j] += gradUh[i,j] + gradUh[j,i]
-
-    # sigma = 1/3*mu*sigma - p*I
-    for iNode in range(nWallNodes):
-        for i in range(3):
-            for j in range(3):
-                wallStressTensor[iNode,i,j] = -mu * wallStressTensor[iNode,i,j] / nWallStressCmpnt[iNode]
-            wallStressTensor[iNode,i,i] += p[iNode]
-
-    # n
-    for iElm in range(nWallElms):
+        # wall stress tensor
+        for i in range(ndim):
+            for j in range(ndim):
+                wallStressTensor[i,j] = mu*(gradUh[i,j] + gradUh[j,i])
+        
+        # Get the normal of the wall element.
         for i in range(3):
             eWallNIds[i] = wallElements[iElm,i]
+        
+        Ae = getSurfaceNormal(wallNodes, eWallNIds, edges, T) # T[2,:] contains the normal
 
-        getSurfaceNormal(nodes, eWallNIds, wallGlbNodeIds, edges, T)
-        for a in range(3):
-            nNormalCmpnt[eWallNIds[a]] += 1.0
-            for i in range(3):
-                normals[eWallNIds[a],i] += T[2,i]
-
-    # sigma*nAvg
-    for iNode in range(nWallNodes):
+        parT[0] = T[2,0]*wallStressTensor[0,0] + T[2,1]*wallStressTensor[0,1] + T[2,2]*wallStressTensor[0,2]
+        parT[1] = T[2,0]*wallStressTensor[1,0] + T[2,1]*wallStressTensor[1,1] + T[2,2]*wallStressTensor[1,2]
+        parT[2] = T[2,0]*wallStressTensor[2,0] + T[2,1]*wallStressTensor[2,1] + T[2,2]*wallStressTensor[2,2]
+        
+        # Calculate Ti and add on to each node.
         for i in range(3):
-            normals[iNode,i] = normals[iNode,i] / nNormalCmpnt[iNode]
-        for i in range(3):
-            wallStress[iNode,i] = normals[iNode,0]*wallStressTensor[iNode,0,i] \
-                                + normals[iNode,1]*wallStressTensor[iNode,1,i] \
-                                + normals[iNode,2]*wallStressTensor[iNode,2,i]
-
+            for j in range(ndim):
+                wallStress[eWallNIds[i],j] += (parT[j] - T[j,j]*p[lumenWallNodeIds[eWallNIds[i]]])*Ae/3.0
+        
+        
