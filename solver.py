@@ -93,17 +93,6 @@ class TransientSolver(Solver):
         self.__initPhysicSolver__(comm, meshes, config)
 
 
-    def PrepareTraction(self, t, dt):
-        if int(t/dt_f) > self.nt:
-            self.nt += 1
-            self.strac = self.etrac
-            self.etrac = np.load('{}{}.npy'.format(modelname, self.nt))
-            print('At t={} read in wallpressure_{}'.format(t, self.nt))
-
-        traction = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
-        return traction
-
-
     def __initPhysicSolver__(self, comm, meshes, config):
         """ Initialize the fluid and solid solver. """
 
@@ -119,12 +108,6 @@ class TransientSolver(Solver):
         # Calculate when to save the result into file.
         saveSteps = np.linspace(0, self.nTimeSteps, self.saveResNum+1, dtype=int)
 
-        # TODO:: Change after combining solid and fluid parts togeter.
-        # Prepare the traction to be applied for solid part.
-        self.nt = 0
-        self.strac = np.zeros_like(self.wallStress, dtype=np.float)
-        self.etrac = np.load('{}{}.npy'.format(modelname, self.nt))
-
         for timeStep in range(self.restartTimestep, self.nTimeSteps):
             t = round(self.t[timeStep], 4)
             dt = self.t[timeStep+1] - self.t[timeStep]
@@ -134,10 +117,6 @@ class TransientSolver(Solver):
 
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
-            # TODO:: Remeber to change this when combining the solid and fluid part together.
-            # traction = self.PrepareTraction(t, dt)
-            # self.solidSolver.ApplyTraction(traction)
-            # # self.solidSolver.ApplyPressure(self.appPressures)
             self.solidSolver.Solve(t, dt)
             # Refresh the fluid solver's context
             # before next loop start.

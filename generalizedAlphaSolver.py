@@ -315,10 +315,10 @@ class GeneralizedAlphaFluidSolver(GeneralizedAlphaSolver):
 
 
 class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
-""" Generalized-alpha solver is a fluid part only solver used for
-    the segregated solution, so the solid solver here is used for
-    export the stress result from fluid solver.
-"""
+    """ Generalized-alpha solver is a fluid part only solver used for
+        the segregated solution, so the solid solver here is used for
+        export the stress result from fluid solver.
+    """
     
     def __init__(self, comm, mesh, config):
         GeneralizedAlphaSolver.__init__(self, comm, mesh, config)

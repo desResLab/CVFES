@@ -85,7 +85,7 @@ cdef double getGlbDerivatives(double[:,::1] nodes, long[::1] eNIds,
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void getSurfaceNormal(double[:,::1] nodes, long[::1] eNIds,
+cdef double getSurfaceNormal(double[:,::1] nodes, long[::1] eNIds,
                            double[:,::1] edges, double[:,::1] T):
 
     cdef double edgenorm = 0.0
@@ -144,7 +144,7 @@ def BdyStressExport(double[:,::1] lumenNodes, long[:,::1] lumenElements,
     cdef long[::1] eNIds = np.empty(nPts, dtype=long)
     cdef double[:,::1] DN = np.empty((ndim, nPts), dtype=np.float)
     cdef double[:,::1] gradUh = np.empty((ndim, ndim), dtype=np.float)
-    cdef double[:,:,::1] wallStressTensor = np.zeros((ndim, ndim), dtype=np.float)
+    cdef double[:,::1] wallStressTensor = np.zeros((ndim, ndim), dtype=np.float)
     # For calculate the wall surface normal.
     cdef long[::1] eWallNIds = np.empty(3, dtype=long)
     cdef double[:,::1] T = np.empty((3, 3), dtype=np.float)
