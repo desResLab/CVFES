@@ -207,6 +207,6 @@ def BdyStressExport(double[:,::1] lumenNodes, long[:,::1] lumenElements,
         # Calculate Ti and add on to each node.
         for i in range(3):
             for j in range(ndim):
-                wallStress[eWallNIds[i],j] += (parT[j] - T[j,j]*p[lumenWallNodeIds[eWallNIds[i]]])*Ae/3.0
+                wallStress[eWallNIds[i],j] += (parT[j] - T[2,j]*p[lumenWallNodeIds[eWallNIds[i]]])*Ae/3.0
         
         
