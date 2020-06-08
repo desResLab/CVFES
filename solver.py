@@ -41,8 +41,6 @@ TAG_DISPLACEMENT = 223
 TAG_CHECKING_STIFFNESS = 311
 
 
-dt_f = 0.02
-
 """ This is the big solver we are going to use here.
 """
 class Solver:

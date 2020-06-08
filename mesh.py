@@ -85,8 +85,13 @@ class Face:
         self.elements = np.array([ElementOfFace(polyDataModel.GetCell(i)) for i in range(self.nElements)])
 
     def adjustNodeIds(self, glbNodeIds, tglbNodeIds):
-        nodeIds = np.array([np.where(tglbNodeIds==i)[0] for i in glbNodeIds]).reshape(glbNodeIds.shape)
-        return nodeIds
+        # nodeIds = np.array([np.where(tglbNodeIds==i)[0] for i in glbNodeIds]).reshape(glbNodeIds.shape)
+        nodeIds = []
+        for i in glbNodeIds:
+            crrIdx = np.where(tglbNodeIds == i)[0]
+            if len(crrIdx) > 0:
+                nodeIds.append(crrIdx[0])
+        return np.array(nodeIds)
 
 
 class Mesh:

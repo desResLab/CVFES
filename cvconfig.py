@@ -149,6 +149,8 @@ class SolverConfig():
         self.ci = solverSection.as_float('ci')
 
         # for solid part
+        self.dt_f = solverSection.as_float('dt_f')
+        
         self.update_interval = solverSection.as_int('stiffness_update_interval')
         self.constant_pressure = solverSection.as_float('constant_pressure')
         self.constant_T = solverSection.as_float('constant_T')

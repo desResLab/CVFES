@@ -94,6 +94,10 @@ class FluidSolver(PhysicsSolver):
         self.du = mesh.iniDu # velocity
         self.p = mesh.iniP # pressure
 
+    def Solve(self, t, dt):
+        self.t = t
+        # self.dt = dt
+
 
 class SolidSolver(PhysicsSolver):
 

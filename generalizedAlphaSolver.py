@@ -363,8 +363,8 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
                     break
 
 
-    def ApplyTraction(self, appTraction):
-        pass
+    # def ApplyTraction(self):
+    #     pass
 
     def Solve(self, t, dt):
         self.timeStep += 1

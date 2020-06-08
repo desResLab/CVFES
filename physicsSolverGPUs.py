@@ -47,6 +47,15 @@ class GPUSolidSolver(PhysicsSolver):
         if self.InitializeGPU() < 0:
             exit(-1)
 
+        # Remember the fluid's time step,
+        # used for read in stress from fluid solution
+        # for segregated solvers.
+        self.dt_f = config.dt_f
+        self.stressFilename = config.exportBdyStressFilename
+        self.nt = 0
+        self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
+        self.strac = np.zeros_like(self.etrac, dtype=np.float)
+
         # Initialize the number of samples.
         self.nSmp = config.nSmp
         self.ndof = mesh.ndof
@@ -223,8 +232,17 @@ class GPUSolidSolver(PhysicsSolver):
         prep_up_event = cl.enqueue_copy(self.queue, self.up_buf, self.srcUP)
 
 
-    def ApplyTraction(self, appTraction):
-        self.appTrac[:,:] = appTraction
+    def RefreshContext(self, physicSolver):
+        t = physicSolver.t
+        dt_f = self.dt_f
+
+        if int(t/dt_f) > self.nt:
+            self.nt += 1
+            self.strac = self.etrac
+            self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
+            print('At t={} read in wallpressure_{}'.format(t, self.nt))
+
+        self.appTrac[:,:] = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
 
 
     def Solve(self, t, dt):
