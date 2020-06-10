@@ -123,7 +123,7 @@ cdef double getSurfaceNormal(double[:,::1] nodes, long[::1] eNIds,
     area = (edges[0,1]*edges[1,2]-edges[0,2]*edges[1,1])**2 +\
            (edges[0,0]*edges[1,2]-edges[0,2]*edges[1,0])**2 +\
            (edges[0,0]*edges[1,1]-edges[0,1]*edges[1,0])**2
-    return sqrt(area)
+    return sqrt(area)/2.0
 
 
 # elements - elements in the whole model that contains nodes on the wall/shell.
@@ -207,6 +207,6 @@ def BdyStressExport(double[:,::1] lumenNodes, long[:,::1] lumenElements,
         # Calculate Ti and add on to each node.
         for i in range(3):
             for j in range(ndim):
-                wallStress[eWallNIds[i],j] += (parT[j] - T[2,j]*p[lumenWallNodeIds[eWallNIds[i]]])*Ae/3.0
+                wallStress[eWallNIds[i],j] -= (parT[j] - T[2,j]*p[lumenWallNodeIds[eWallNIds[i]]])*Ae/3.0
         
         

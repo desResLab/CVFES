@@ -60,6 +60,8 @@ class GeneralizedAlphaSolver(PhysicsSolver):
 
     def Solve(self, t, dt):
 
+        self.t = t
+
         # Initialize boundary condition.
         self.InitializeBC(t)
 
@@ -325,7 +327,9 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
 
         # Remember the export filename.
         self.exportFilename = config.exportBdyStressFilename
+        self.useConstantStress = config.useConstantStress
         self.timeStep = 0
+        self.endtime = config.endtime
 
         # Initialize the neighborhood info used for export
         # stress from fuild solver.
@@ -334,6 +338,10 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
 
 
     def RefreshContext(self, physicSolver):
+
+        if self.useConstantStress and physicSolver.t < self.endtime:
+            return
+
         wallStress = np.zeros((self.mesh.nNodes, 3), dtype=np.float)
 
         if self.lumenWallElements is None:

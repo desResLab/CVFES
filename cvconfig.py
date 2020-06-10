@@ -204,6 +204,9 @@ class CVConfig:
         self.solver.exportBdyStressFilename = 'BdyStress'
         if 'export_stress_filename' in config:
             self.solver.exportBdyStressFilename = config['export_stress_filename']
+        self.solver.useConstantStress = False
+        if 'use_constant_stress' in config:
+            self.solver.useConstantStress = config.as_bool('use_constant_stress')
 
         # Config the number of samples being used in Solid part.
         self.meshes['wall'].nSmp = self.nSmp

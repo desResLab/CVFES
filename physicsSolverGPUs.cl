@@ -165,9 +165,9 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
             }
 
             // 'Assemble' the force vector.
-            sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3]*area/3.0;
-            sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1]*area/3.0;
-            sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2]*area/3.0;
+            sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3];
+            sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1];
+            sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2];
         }
 
 
@@ -385,9 +385,9 @@ __kernel void assemble_K_P(const long nElms, const long nNodes, const long nSmp,
                 }
 
                 // 'Assemble' the force vector.
-                sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3]*area/3.0;;
-                sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1]*area/3.0;
-                sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2]*area/3.0;
+                sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3];
+                sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1];
+                sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2];
             }
         }
     }

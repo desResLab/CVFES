@@ -22,6 +22,8 @@ from shape import *
 from physicsSolver import PhysicsSolver
 
 from timeit import default_timer as timer
+import math
+
 
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
@@ -52,9 +54,16 @@ class GPUSolidSolver(PhysicsSolver):
         # for segregated solvers.
         self.dt_f = config.dt_f
         self.stressFilename = config.exportBdyStressFilename
-        self.nt = 0
-        self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
-        self.strac = np.zeros_like(self.etrac, dtype=np.float)
+        self.useConstantStress = config.useConstantStress
+        self.constant_T = config.constant_T
+        if self.useConstantStress:
+            self.etrac = np.load('{}.npy'.format(self.stressFilename))
+            self.iniAppTrac = np.zeros((mesh.nNodes, 3))
+        else:
+            self.nt = 0
+            self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
+            self.strac = np.zeros_like(self.etrac, dtype=np.float)
+            self.iniAppTrac = np.zeros((mesh.nNodes, 3))
 
         # Initialize the number of samples.
         self.nSmp = config.nSmp
@@ -158,7 +167,7 @@ class GPUSolidSolver(PhysicsSolver):
         self.pinned_appTrac = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.nNodes*24))
         self.appTrac, _eventAppTrac = cl.enqueue_map_buffer(self.queue, self.pinned_appTrac, map_flags.WRITE, 0,
                                                             (self.nNodes, 3), self.LM.dtype)
-        self.appTrac[:,:] = np.zeros((self.nNodes, 3))
+        self.appTrac[:,:] = self.iniAppTrac
         prep_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
 
         # 'Assemble' the inital M (mass) and Ku (stiffness) 'matrices'.
@@ -233,16 +242,26 @@ class GPUSolidSolver(PhysicsSolver):
 
 
     def RefreshContext(self, physicSolver):
+
         t = physicSolver.t
         dt_f = self.dt_f
 
-        if int(t/dt_f) > self.nt:
-            self.nt += 1
-            self.strac = self.etrac
-            self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
-            print('At t={} read in wallpressure_{}'.format(t, self.nt))
+        if self.useConstantStress:
+            if t > self.constant_T:
+                self.appTrac[:,:] = self.etrac
+            else:
+                a = b = self.etrac/2.0
+                n = math.pi/self.constant_T
+                self.appTrac[:,:] = a - b*math.cos(n*t)
+        
+        else:
+            if int(t/dt_f) > self.nt:
+                self.nt += 1
+                self.strac = self.etrac
+                self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
+                print('At t={} read in wallpressure_{}'.format(t, self.nt))
 
-        self.appTrac[:,:] = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
+            self.appTrac[:,:] = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
 
 
     def Solve(self, t, dt):
