@@ -34,6 +34,7 @@ TAG_COMM_DOF_VALUE = 212
 TAG_LHS = 224
 TAG_STRESSES = 222
 TAG_DISPLACEMENT = 223
+TAG_NODE_ID = 224
 # TAG_UNION = 224
 TAG_CHECKING_STIFFNESS = 311
 
@@ -53,23 +54,31 @@ class GPUSolidSolver(PhysicsSolver):
         # used for read in stress from fluid solution
         # for segregated solvers.
         self.dt_f = config.dt_f
-        self.stressFilename = config.exportBdyStressFilename
+        self.stressFilename = config.exportBdyStressFilename # Global force
         self.useConstantStress = config.useConstantStress
         self.constant_T = config.constant_T
-        if self.useConstantStress:
-            self.etrac = np.load('{}.npy'.format(self.stressFilename))
-            self.iniAppTrac = np.zeros((mesh.nNodes, 3))
+        self.constantPressure = config.constant_pressure # Local pressure
+        if self.stressFilename is not None:
+            if self.useConstantStress:
+                self.etrac = np.load('{}.npy'.format(self.stressFilename))
+            else:
+                self.nt = 0
+                self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
+                self.strac = np.zeros_like(self.etrac, dtype=np.float)
         else:
-            self.nt = 0
-            self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
-            self.strac = np.zeros_like(self.etrac, dtype=np.float)
-            self.iniAppTrac = np.zeros((mesh.nNodes, 3))
+            self.etrac = np.zeros((mesh.nNodes, 3))
+        
+        self.appTrac = np.zeros((mesh.nNodes, 3))
+        self.pressure = 0.0
 
         # Initialize the number of samples.
         self.nSmp = config.nSmp
         self.ndof = mesh.ndof
         self.nElms = mesh.nElements
         self.nNodes = mesh.nNodes
+
+        # Prepare the mesh info for union.
+        self.nodeIds = np.unique(mesh.elementNodeIds.ravel())
 
         # Initialize the context.
         self.du = mesh.iniDu # velocity
@@ -162,21 +171,21 @@ class GPUSolidSolver(PhysicsSolver):
         self.Ku_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         self.P_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
 
-        map_flags = cl.map_flags
-        self.appTrac_buf = cl.Buffer(self.context, mem_flags.READ_ONLY, int(self.nNodes*24))
-        self.pinned_appTrac = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.nNodes*24))
-        self.appTrac, _eventAppTrac = cl.enqueue_map_buffer(self.queue, self.pinned_appTrac, map_flags.WRITE, 0,
-                                                            (self.nNodes, 3), self.LM.dtype)
-        self.appTrac[:,:] = self.iniAppTrac
-        prep_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
+        # map_flags = cl.map_flags
+        # self.appTrac_buf = cl.Buffer(self.context, mem_flags.READ_ONLY, int(self.nNodes*24))
+        # self.pinned_appTrac = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.nNodes*24))
+        # self.appTrac, _eventAppTrac = cl.enqueue_map_buffer(self.queue, self.pinned_appTrac, map_flags.WRITE, 0,
+        #                                                     (self.nNodes, 3), self.LM.dtype)
+        # self.appTrac[:,:] = self.iniAppTrac
+        # prep_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
 
         # 'Assemble' the inital M (mass) and Ku (stiffness) 'matrices'.
         # Kernel.
-        initial_assemble_events = [prep_appTrac_event]
+        initial_assemble_events = []
         for iColorGroup in range(len(self.colorGps_buf)):
             initial_assemble_event = \
             self.program.assemble_K_M_P(self.queue, (len(self.mesh.colorGroups[iColorGroup]),), (1,),
-                                        np.int64(self.nNodes), np.int64(self.nSmp), self.appTrac_buf,
+                                        np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.pressure),
                                         self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGroup], thickness_buf,
                                         self.elmTE_buf, u_buf, self.Ku_buf, self.LM_buf, self.P_buf,
                                         wait_for=initial_assemble_events)
@@ -210,10 +219,13 @@ class GPUSolidSolver(PhysicsSolver):
         initial_ddu_copy_event.wait()
         # Synchronize the acceleration on common nodes.
         self.SyncCommNodes(self.ddu)
+        # Add on the global force.
+        self.ddu += self.appTrac.reshape(self.ndof, 1) / self.LHS
 
 
         # Prepare the memories.
         # Memory on GPU devices.
+        map_flags = cl.map_flags
         self.ures_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         self.u_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         self.up_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
@@ -246,22 +258,32 @@ class GPUSolidSolver(PhysicsSolver):
         t = physicSolver.t
         dt_f = self.dt_f
 
-        if self.useConstantStress:
-            if t > self.constant_T:
-                self.appTrac[:,:] = self.etrac
+        # Set up the global force.
+        if self.stressFilename is not None:
+            if self.useConstantStress:
+                if t > self.constant_T:
+                    self.appTrac = self.etrac
+                else:
+                    a = b = self.etrac/2.0
+                    n = math.pi/self.constant_T
+                    self.appTrac = a - b*math.cos(n*t)
+            
             else:
-                a = b = self.etrac/2.0
-                n = math.pi/self.constant_T
-                self.appTrac[:,:] = a - b*math.cos(n*t)
-        
-        else:
-            if int(t/dt_f) > self.nt:
-                self.nt += 1
-                self.strac = self.etrac
-                self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
-                print('At t={} read in wallpressure_{}'.format(t, self.nt))
+                if int(t/dt_f) > self.nt:
+                    self.nt += 1
+                    self.strac = self.etrac
+                    self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
+                    print('At t={} read in wallpressure_{}'.format(t, self.nt))
 
-            self.appTrac[:,:] = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
+                self.appTrac = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
+
+        # Set up the pressure.
+        if t > self.constant_T:
+            self.pressure = self.constantPressure
+        else:
+            a = b = self.constantPressure/2.0
+            n = math.pi/self.constant_T
+            self.pressure = a - b*math.cos(n*t)
 
 
     def Solve(self, t, dt):
@@ -270,14 +292,14 @@ class GPUSolidSolver(PhysicsSolver):
         cl.enqueue_fill_buffer(self.queue, self.P_buf, np.float64(0.0), 0, self.LM.nbytes)
 
         update_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
-        update_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
+        # update_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
 
-        calc_Ku_events = [update_u_event, update_appTrac_event]
+        calc_Ku_events = [update_u_event]
         for iColorGrp in range(len(self.colorGps_buf)):
             calc_Ku_event = \
             self.program.assemble_K_P(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
                                       np.int64(len(self.mesh.colorGroups[iColorGrp])),
-                                      np.int64(self.nNodes), np.int64(self.nSmp), self.appTrac_buf,
+                                      np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.pressure),
                                       self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGrp],
                                       self.elmTE_buf, self.u_buf, self.Ku_buf, self.P_buf,
                                       wait_for=calc_Ku_events)
@@ -294,6 +316,9 @@ class GPUSolidSolver(PhysicsSolver):
 
         # Synchronize the ures.
         self.SyncCommNodes(self.srcURes)
+        # Add on the global force.
+        self.srcURes[:,:] += dt*dt*self.appTrac.reshape(self.ndof, 1) / self.LHS
+        # Apply boundary condition.
         self.ApplyBoundaryCondition(self.srcURes)
 
         # Update/Shift the pointers.
@@ -418,13 +443,20 @@ class GPUSolidSolver(PhysicsSolver):
 
         if self.rank == 0:
 
+            nodesInfo = MPI.Status()
+            dofBuf = np.empty(self.ndof, dtype=np.int64)
             uBuf = np.zeros((self.ndof, self.nSmp))
+            
             for i in range(1, self.size):
+                self.comm.Recv(dofBuf, MPI.ANY_SOURCE, TAG_NODE_ID, nodesInfo)
+                dofs = dofBuf[:nodesInfo.Get_count(MPI.INT64_T)]
                 self.comm.Recv(uBuf, MPI.ANY_SOURCE, TAG_DISPLACEMENT)
                 # Flag the nodes uBuf acctually contains.
-                quant[uBuf!=0] = uBuf[uBuf!=0]
+                quant[dofs] = uBuf[dofs]
 
         else:
+            dofs = np.array([[i*3,i*3+1,i*3+2] for i in self.nodeIds]).ravel()
+            self.comm.Send(dofs, 0, TAG_NODE_ID)
             self.comm.Send(quant, 0, TAG_DISPLACEMENT)
 
 

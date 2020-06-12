@@ -25,8 +25,8 @@ void TtKT(const double *T, const double *K,
    - Ku: (nGNodes*3, nSmp)  the product result after assembling.
  */
 
-__kernel void assemble_K_M_P(const long nNodes, const long nSmp,
-                             const __global double *traction, const __global double *pVals,
+__kernel void assemble_K_M_P(const long nNodes, const long nSmp, const double pressure,
+                             const __global double *pVals,
                              const __global double *nodes, const __global long *elmNodeIds,
                              const __global double *thickness, const __global double *elmThicknessE,
                              const __global double *u, __global double *Ku,
@@ -165,21 +165,21 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
             }
 
             // 'Assemble' the force vector.
-            sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3];
-            sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1];
-            sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2];
+            sP[nodeIds[i]*3*nSmp] += T[6] * pressure * area / 3.0;
+            sP[(nodeIds[i]*3+1)*nSmp] += T[7] * pressure * area / 3.0;
+            sP[(nodeIds[i]*3+2)*nSmp] += T[8] * pressure * area / 3.0;
         }
 
 
         // Calculate M_ab^e
         // ab = 00
-        lm = density * area * (elmThick[0]/4.0 + elmThick[1]/8.0 + elmThick[2]/8.0) / 9.0;
+        lm = density * area * (elmThick[0]/4.0 + elmThick[1]/8.0 + elmThick[2]/8.0) / 3.0;
         sM[(nodeIds[0]*3)*nSmp] += lm;
         sM[(nodeIds[0]*3+1)*nSmp] += lm;
         sM[(nodeIds[0]*3+2)*nSmp] += lm;
 
         // ab = 01
-        lm = density * area * (elmThick[0]/8.0 + elmThick[1]/8.0) / 9.0;
+        lm = density * area * (elmThick[0]/8.0 + elmThick[1]/8.0) / 3.0;
         sM[(nodeIds[0]*3)*nSmp] += lm;
         sM[(nodeIds[0]*3+1)*nSmp] += lm;
         sM[(nodeIds[0]*3+2)*nSmp] += lm;
@@ -189,7 +189,7 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
         sM[(nodeIds[1]*3+2)*nSmp] += lm;
 
         // ab = 02
-        lm = density * area * (elmThick[0]/8.0 + elmThick[2]/8.0) / 9.0;
+        lm = density * area * (elmThick[0]/8.0 + elmThick[2]/8.0) / 3.0;
         sM[(nodeIds[0]*3)*nSmp] += lm;
         sM[(nodeIds[0]*3+1)*nSmp] += lm;
         sM[(nodeIds[0]*3+2)*nSmp] += lm;
@@ -200,13 +200,13 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
 
         // Row 1
         // ab = 11
-        lm = density * area * (elmThick[0]/8.0 + elmThick[1]/4.0 + elmThick[2]/8.0) / 9.0;
+        lm = density * area * (elmThick[0]/8.0 + elmThick[1]/4.0 + elmThick[2]/8.0) / 3.0;
         sM[(nodeIds[1]*3)*nSmp] += lm;
         sM[(nodeIds[1]*3+1)*nSmp] += lm;
         sM[(nodeIds[1]*3+2)*nSmp] += lm;
 
         // ab = 12
-        lm = density * area * (elmThick[1]/8.0 + elmThick[2]/8.0) / 9.0;
+        lm = density * area * (elmThick[1]/8.0 + elmThick[2]/8.0) / 3.0;
         sM[(nodeIds[1]*3)*nSmp] += lm;
         sM[(nodeIds[1]*3+1)*nSmp] += lm;
         sM[(nodeIds[1]*3+2)*nSmp] += lm;
@@ -217,7 +217,7 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
 
         // Row 2
         // ab = 22
-        lm = density * area * (elmThick[0]/8.0 + elmThick[1]/4.0 + elmThick[2]/8.0) / 9.0;
+        lm = density * area * (elmThick[0]/8.0 + elmThick[1]/4.0 + elmThick[2]/8.0) / 3.0;
         sM[(nodeIds[2]*3)*nSmp] += lm;
         sM[(nodeIds[2]*3+1)*nSmp] += lm;
         sM[(nodeIds[2]*3+2)*nSmp] += lm;
@@ -232,7 +232,7 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp,
  */
 
 __kernel void assemble_K_P(const long nElms, const long nNodes, const long nSmp,
-                           const __global double *traction, const __global double *pVals,
+                           const double pressure, const __global double *pVals,
                            const __global double *nodes, const __global long *elmNodeIds,
                            const __global double *elmThicknessE,
                            const __global double *u, __global double *Ku, __global double *P)
@@ -385,9 +385,9 @@ __kernel void assemble_K_P(const long nElms, const long nNodes, const long nSmp,
                 }
 
                 // 'Assemble' the force vector.
-                sP[nodeIds[i]*3*nSmp] += traction[nodeIds[i]*3];
-                sP[(nodeIds[i]*3+1)*nSmp] += traction[nodeIds[i]*3+1];
-                sP[(nodeIds[i]*3+2)*nSmp] += traction[nodeIds[i]*3+2];
+                sP[nodeIds[i]*3*nSmp] += T[6] * pressure * area / 3.0;
+                sP[(nodeIds[i]*3+1)*nSmp] += T[7] * pressure * area / 3.0;
+                sP[(nodeIds[i]*3+2)*nSmp] += T[8] * pressure * area / 3.0;
             }
         }
     }

@@ -201,7 +201,7 @@ class CVConfig:
         self.solver.saveStressFilename = config['save_stress_filename']
         self.solver.saveResNum = config.as_int('save_result_num')
         # Config the exported stress file name for segregated solver.
-        self.solver.exportBdyStressFilename = 'BdyStress'
+        self.solver.exportBdyStressFilename = None
         if 'export_stress_filename' in config:
             self.solver.exportBdyStressFilename = config['export_stress_filename']
         self.solver.useConstantStress = False
