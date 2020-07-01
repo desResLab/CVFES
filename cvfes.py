@@ -50,10 +50,11 @@ class CVFES:
         equations = self.cvConfig.equations
         self.meshes = {'lumen': FluidMesh(self.comm, config, meshes['lumen'], equations['fluid']),
                        'wall': SolidMesh(self.comm, config, meshes['wall'], equations['solid'])}
+        self.name = config.name
 
     def Distribute(self):
         # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        wallPartName = 'MeshPartition/Wall_{}_{}'.format(self.size, self.rank)
+        wallPartName = 'MeshPartition/Wall_{}_{}_{}'.format(self.name, self.size, self.rank)
         if MeshPartition(wallPartName, self.comm, self.meshes['wall']) < 0:
             print('Distribute mesh failed!')
             return -1
@@ -61,7 +62,7 @@ class CVFES:
         return 0
 
     def Coloring(self):
-        wallColoringName = 'MeshColoring/Wall_{}_{}'.format(self.size, self.rank)
+        wallColoringName = 'MeshColoring/Wall_{}_{}_{}'.format(self.name, self.size, self.rank)
         if MeshColoring(wallColoringName, self.meshes['wall']) < 0:
             print('Coloring mesh failed!')
             return -1

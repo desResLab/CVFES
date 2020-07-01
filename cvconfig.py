@@ -173,6 +173,9 @@ class CVConfig:
         self.ndim = config.as_int('dimensions')
         self.nSmp = config.as_int('sample_num')
         self.regenerate_samples = config.as_bool('regenerate_samples')
+        self.name = 'spCy'
+        if 'name' in config:
+            self.name = config['name']
 
         # Meshes.
         self.meshes = {}
