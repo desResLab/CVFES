@@ -329,6 +329,7 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
         self.exportFilename = config.exportBdyStressFilename
         self.useConstantStress = config.useConstantStress
         self.timeStep = 0
+        self.dt_f = config.dt
         self.endtime = config.endtime
 
         # Initialize the neighborhood info used for export
@@ -339,7 +340,7 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
 
     def RefreshContext(self, physicSolver):
 
-        if self.useConstantStress and physicSolver.t < self.endtime:
+        if self.useConstantStress and physicSolver.t+self.dt_f < self.endtime:
             return
 
         wallStress = np.zeros((self.mesh.nNodes, 3), dtype=np.float)
@@ -363,13 +364,16 @@ class GeneralizedAlphaSolidSolver(GeneralizedAlphaSolver):
         self.lumenWallNodeIds = sorter[np.searchsorted(lumen.glbNodeIds, wall.glbNodeIds, sorter=sorter)]
 
         # Identify elements attached on the wall.
-        self.lumenWallElements = np.empty((wall.nElements, 4), dtype=int)
-        for iWallElm in range(wall.nElements):
-            for iLumenElm in range(lumen.nElements):
-                if np.sum(np.in1d(lumen.elementNodeIds[iLumenElm], self.lumenWallNodeIds[wall.elementNodeIds[iWallElm]])) == 3:
-                    self.lumenWallElements[iWallElm,:] = lumen.elementNodeIds[iLumenElm]
-                    break
+        # self.lumenWallElements = np.empty((wall.nElements, 4), dtype=int)
+        # for iWallElm in range(wall.nElements):
+        #     for iLumenElm in range(lumen.nElements):
+        #         if np.sum(np.in1d(lumen.elementNodeIds[iLumenElm], self.lumenWallNodeIds[wall.elementNodeIds[iWallElm]])) == 3:
+        #             self.lumenWallElements[iWallElm,:] = lumen.elementNodeIds[iLumenElm]
+        #             break
 
+        sorter = np.argsort(lumen.glbElementIds)
+        elementIds = sorter[np.searchsorted(lumen.glbElementIds, wall.glbElementIds, sorter=sorter)]
+        self.lumenWallElements = lumen.elementNodeIds[elementIds]
 
     # def ApplyTraction(self):
     #     pass

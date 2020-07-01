@@ -148,6 +148,7 @@ class Mesh:
         self.nodes = np.copy(vtk_to_numpy(polyDataModel.GetPoints().GetData())) # _nodes
         self.nodes = self.nodes.astype(float)
         self.glbNodeIds = vtk_to_numpy(polyDataModel.GetPointData().GetArray('GlobalNodeID'))
+        self.glbElementIds = vtk_to_numpy(polyDataModel.GetCellData().GetArray('GlobalElementID'))
 
         # Set the element groups, will be updated to sub-group after partition.
         self.nElements = polyDataModel.GetNumberOfCells()

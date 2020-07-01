@@ -107,15 +107,15 @@ class TransientSolver(Solver):
         saveSteps = np.linspace(0, self.nTimeSteps, self.saveResNum+1, dtype=int)
 
         for timeStep in range(self.restartTimestep, self.nTimeSteps):
-            t = round(self.t[timeStep], 4)
+            # t = round(self.t[timeStep], 4)
             dt = self.t[timeStep+1] - self.t[timeStep]
 
             # Solve for the fluid part.
-            self.fluidSolver.Solve(t, dt)
+            self.fluidSolver.Solve(round(self.t[timeStep], 4), dt)
 
             # Solve for the solid part based on calculation result of fluid part.
             self.solidSolver.RefreshContext(self.fluidSolver)
-            self.solidSolver.Solve(t, dt)
+            self.solidSolver.Solve(self.t[timeStep], dt)
             # Refresh the fluid solver's context
             # before next loop start.
             self.fluidSolver.RefreshContext(self.solidSolver)
