@@ -79,6 +79,7 @@ class GPUSolidSolver(PhysicsSolver):
 
         # Prepare the mesh info for union.
         self.nodeIds = np.unique(mesh.elementNodeIds.ravel())
+        self.dofs = np.array([[3*node, 3*node+1, 3*node+2] for node in self.nodeIds]).astype(int).ravel()
 
         # Initialize the context.
         self.du = mesh.iniDu # velocity
@@ -154,8 +155,8 @@ class GPUSolidSolver(PhysicsSolver):
         # elmAveThick = np.mean(elmVerThick, axis=2)
         # - thickness x E
         elmTE = np.mean(elmVerE*elmVerThick, axis=2)
-        self.elmTE_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = elmTE)
-        self.elmE_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = elmAveE)
+        self.elmTE_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = elmTE[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
+        self.elmE_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = elmAveE[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
 
         # for calculating K (stiffness) matrix, D needs
         k = 5.0/6.0
@@ -170,6 +171,10 @@ class GPUSolidSolver(PhysicsSolver):
         self.LM_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         self.Ku_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         self.P_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
+
+        # cl.enqueue_fill_buffer(self.queue, self.LM_buf, np.float64(0.0), 0, self.LM.nbytes)
+        # cl.enqueue_fill_buffer(self.queue, self.Ku_buf, np.float64(0.0), 0, self.LM.nbytes)
+        # cl.enqueue_fill_buffer(self.queue, self.P_buf, np.float64(0.0), 0, self.LM.nbytes)
 
         # map_flags = cl.map_flags
         # self.appTrac_buf = cl.Buffer(self.context, mem_flags.READ_ONLY, int(self.nNodes*24))
@@ -187,7 +192,7 @@ class GPUSolidSolver(PhysicsSolver):
             self.program.assemble_K_M_P(self.queue, (len(self.mesh.colorGroups[iColorGroup]),), (1,),
                                         np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.pressure),
                                         self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGroup], thickness_buf,
-                                        self.elmTE_buf, u_buf, self.Ku_buf, self.LM_buf, self.P_buf,
+                                        self.elmTE_buf[iColorGroup], u_buf, self.Ku_buf, self.LM_buf, self.P_buf,
                                         wait_for=initial_assemble_events)
             initial_assemble_events = [initial_assemble_event]
 
@@ -262,11 +267,11 @@ class GPUSolidSolver(PhysicsSolver):
         if self.stressFilename is not None:
             if self.useConstantStress:
                 if t > self.constant_T:
-                    self.appTrac = self.etrac
+                    appTrac = self.etrac
                 else:
                     a = b = self.etrac/2.0
                     n = math.pi/self.constant_T
-                    self.appTrac = a - b*math.cos(n*t)
+                    appTrac = a - b*math.cos(n*t)
             
             else:
                 if int(t/dt_f) > self.nt:
@@ -275,7 +280,10 @@ class GPUSolidSolver(PhysicsSolver):
                     self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt))
                     print('At t={} read in wallpressure_{}'.format(t, self.nt))
 
-                self.appTrac = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
+                appTrac = self.strac + (t - self.nt*dt_f)*(self.etrac - self.strac)/dt_f
+
+            # Only use values of the dofs contained in the partition.
+            self.appTrac[self.nodeIds,:] = appTrac[self.nodeIds]
 
         # Set up the pressure.
         if t > self.constant_T:
@@ -301,7 +309,7 @@ class GPUSolidSolver(PhysicsSolver):
                                       np.int64(len(self.mesh.colorGroups[iColorGrp])),
                                       np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.pressure),
                                       self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGrp],
-                                      self.elmTE_buf, self.u_buf, self.Ku_buf, self.P_buf,
+                                      self.elmTE_buf[iColorGrp], self.u_buf, self.Ku_buf, self.P_buf,
                                       wait_for=calc_Ku_events)
             calc_Ku_events = [calc_Ku_event]
 
@@ -420,7 +428,7 @@ class GPUSolidSolver(PhysicsSolver):
                                       np.int64(self.nNodes), np.int64(self.nSmp),
                                       self.pVals_buf, self.nodes_buf,
                                       self.colorGps_buf[iColorGrp], self.colorGps_elmIds_buf[iColorGrp],
-                                      self.elmE_buf, self.up_buf, self.u_buf, self.stress_buf,
+                                      self.elmE_buf[iColorGrp], self.up_buf, self.u_buf, self.stress_buf,
                                       wait_for=[update_u_event])
             calc_stress_events.append(calc_s_event)
 
@@ -449,14 +457,14 @@ class GPUSolidSolver(PhysicsSolver):
             
             for i in range(1, self.size):
                 self.comm.Recv(dofBuf, MPI.ANY_SOURCE, TAG_NODE_ID, nodesInfo)
+                nodesSource = nodesInfo.Get_source()
                 dofs = dofBuf[:nodesInfo.Get_count(MPI.INT64_T)]
-                self.comm.Recv(uBuf, MPI.ANY_SOURCE, TAG_DISPLACEMENT)
+                self.comm.Recv(uBuf, nodesSource, TAG_DISPLACEMENT)
                 # Flag the nodes uBuf acctually contains.
-                quant[dofs] = uBuf[dofs]
+                quant[dofs,:] = uBuf[dofs]
 
         else:
-            dofs = np.array([[i*3,i*3+1,i*3+2] for i in self.nodeIds]).ravel()
-            self.comm.Send(dofs, 0, TAG_NODE_ID)
+            self.comm.Send(self.dofs, 0, TAG_NODE_ID)
             self.comm.Send(quant, 0, TAG_DISPLACEMENT)
 
 
