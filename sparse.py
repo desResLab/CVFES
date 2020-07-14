@@ -104,7 +104,7 @@ class SparseInfo:
         # TODO:: change this to decomposition solver!!!!!
         # diagA = A.diagonal().copy()
         # diagA[diagA==0.0] = 1.0
-        # P = diags(1.0/diagA, 0, format="csr")
+        # P = diags(diagA, 0, format="csr")
         # M_x = lambda x: spsolve(P, x)
 
         P = spilu(A)
