@@ -29,3 +29,5 @@ if __name__ == "__main__":
 
     # flow = np.loadtxt('lcSparseInlet.flow')
     # print(flow[flow[:,0]==0.005, 1])
+    
+    print(np.mean(flow[:,1])) # -0.2804761486081371
