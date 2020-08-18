@@ -1,5 +1,5 @@
 import numpy as np
-
+from math import sin
 
 def FlowCalc(stime, etime, dt, cycletime, eqn):
 
@@ -23,9 +23,11 @@ if __name__ == "__main__":
     dt = 0.001
     cycletime = 0.7
     eqn = '84.0*t**2-0.22 if t>=0.0 and t<=0.05 else 21.0*(t-0.14)**2-0.18 if t<=0.14 else -0.18-0.67*(t-0.14) if t<=0.2 else -0.22+2.0*(t-0.2) if t<=0.21 else 30.86*(t-0.3)**2-0.45 if t<=0.3 else -0.45+0.62*(t-0.3) if t<=0.67 else -0.22'
+    # eqn = '0.21*sin(t*8.975979)-0.22'
 
     flow = FlowCalc(stime, etime, dt, cycletime, eqn)
-    np.savetxt('lcSparseInlet.flow', flow)
+    np.savetxt('../cfg/lcSparseInlet.flow', flow, fmt='%1.4e')
+    # np.savetxt('../cfg/lcSinInflow.flow', flow, fmt='%1.4e')
 
     # flow = np.loadtxt('lcSparseInlet.flow')
     # print(flow[flow[:,0]==0.005, 1])

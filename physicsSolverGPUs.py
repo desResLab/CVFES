@@ -456,7 +456,7 @@ class GPUSolidSolver(PhysicsSolver):
             uBuf = np.zeros((self.ndof, self.nSmp))
             
             for i in range(1, self.size):
-                self.comm.Recv(dofBuf, MPI.ANY_SOURCE, TAG_NODE_ID, nodesInfo)
+                self.comm.Recv(dofBuf, i, TAG_NODE_ID, nodesInfo) # MPI.ANY_SOURCE
                 nodesSource = nodesInfo.Get_source()
                 dofs = dofBuf[:nodesInfo.Get_count(MPI.INT64_T)]
                 self.comm.Recv(uBuf, nodesSource, TAG_DISPLACEMENT)
