@@ -28,11 +28,12 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.Dof = 4 # 3 fo velocity (du) and 1 of pressure
 
         # Initialize the context.
-        self.du = mesh.iniDu # velocity
+        self.du = mesh.iniDu.reshape((self.mesh.nNodes, 3)) # velocity
         self.p = mesh.iniP # pressure
 
         self.odu = np.zeros_like(self.du)
         self.op = np.zeros_like(self.p)
+        
         self.sdu = np.zeros((self.mesh.nElements, 4, 3)) # sub-scale velocity
         self.nsdu = np.zeros_like(self.sdu) # sdu at next time step
 
@@ -66,14 +67,12 @@ class ExplicitVMSSolver(PhysicsSolver):
 
         self.LHS = np.zeros(self.mesh.nNodes*self.Dof)
         self.RHS = np.zeros(self.mesh.nNodes*self.Dof)
+        self.Res = np.zeros(self.mesh.nNodes*self.Dof)
 
         # Evaluate velocity prediction hdu and pressure prediction hp
         # at time step n+1 using the second order approximation.
         hdu = 1.5*self.du - 0.5*self.odu
         hp = 1.5*self.p - 0.5*self.op
-
-        du = self.du.reshape((self.mesh.nNodes, 3))
-        hdu = hdu.reshape((self.mesh.nNodes, 3))
 
         # Calculate the invEpsilon for artificial incompressible coef.
         # ASS = 5.0
@@ -82,10 +81,10 @@ class ExplicitVMSSolver(PhysicsSolver):
 
         # Assemble the LHS and RHS.
         OptimizedExplicitVMSAssemble(self.mesh.nodes, self.mesh.elementNodeIds,
-                                     du, self.p, hdu, hp, self.sdu, self.nsdu,
-                                     self.mesh.inscribeDiameters, self.f,
+                                     self.du, self.p, hdu, hp, self.sdu, self.nsdu,
+                                     self.f, self.mesh.inscribeDiameters,
                                      self.lN, self.lDN, self.w, self.coefs,
-                                     self.LHS, self.RHS)
+                                     self.LHS, self.RHS, self.Res)
 
         # Solve
         self.odu = self.du
@@ -95,9 +94,9 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.nsdu = np.zeros_like(self.sdu)
 
         # res = self.RHS / self.LHS
-        res = np.divide(self.RHS, self.LHS, out=np.zeros_like(self.RHS), where=self.LHS!=0)
+        res = np.divide(self.RHS-dt*self.Res, self.LHS, out=np.zeros_like(self.RHS), where=self.LHS!=0)
         res = res.reshape((self.mesh.nNodes, self.Dof))
-        self.du = res[:,:3].ravel()
+        self.du = res[:,:3].ravel().reshape((self.mesh.nNodes, 3))
         self.p = res[:,-1].ravel()
 
         # Apply the Dirichlet boundary conditions.
@@ -108,16 +107,21 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.mesh.updateInletVelocity(t)
         # Combine the boundary condition at the start of each time step.
         for inlet in self.mesh.faces['inlet']:
-            dofs = self.GenerateDofs(inlet.appNodes, 3)
-            self.du[dofs] = inlet.inletVelocity
+            # dofs = self.GenerateDofs(inlet.appNodes, 3)
+            self.du[inlet.appNodes] = inlet.inletVelocity.reshape((len(inlet.appNodes), 3))
 
-        dofs = self.GenerateDofs(self.mesh.wall, 3)
-        self.du[dofs] = 0.0
+        # dofs = self.GenerateDofs(self.mesh.wall, 3)
+        self.du[self.mesh.wall] = 0.0
 
-    def GenerateDofs(self, nodes, dof):
-        baseArray = np.arange(dof)
-        return np.array([node*dof+baseArray for node in nodes]).ravel()
+    # def GenerateDofs(self, nodes, dof):
+    #     baseArray = np.arange(dof)
+    #     return np.array([node*dof+baseArray for node in nodes])
 
     def Save(self, filename, counter):
         self.mesh.Save(filename, counter, self.du.reshape(self.mesh.nNodes, 3), self.p, 'velocity')
+
+        # res = self.Res.reshape((self.mesh.nNodes, self.Dof))
+        # resDu = res[:,:3].ravel()
+        # resP = res[:,-1].ravel()
+        # self.mesh.Save(filename, counter, resDu.reshape(self.mesh.nNodes, 3), resP, 'residual')
 

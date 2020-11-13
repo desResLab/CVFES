@@ -92,8 +92,9 @@ cdef double getGlbDerivatives(
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void assembling(long[::1] eNIds, double[::1] lLHS, double[:,::1] lR,
-                     double[::1] LHS, double[::1] RHS):
+cdef void assembling(long[::1] eNIds, double[::1] lLHS, double[:,::1] lRHS,
+                     double[:,::1] lRes, double[::1] LHS, double[::1] RHS,
+                     double[::1] Res):
     
     cdef int nPts = eNIds.shape[0]
     cdef int a, b
@@ -101,7 +102,8 @@ cdef void assembling(long[::1] eNIds, double[::1] lLHS, double[:,::1] lR,
     for a in range(nPts):
         for b in range(4): # Dof
             LHS[eNIds[a]*4+b] += lLHS[a]
-            RHS[eNIds[a]*4+b] += lR[a,b]
+            RHS[eNIds[a]*4+b] += lRHS[a,b]
+            Res[eNIds[a]*4+b] += lRes[a,b]
 
 
 @cython.cdivision(True)
@@ -110,9 +112,9 @@ cdef void assembling(long[::1] eNIds, double[::1] lLHS, double[:,::1] lR,
 def OptimizedExplicitVMSAssemble(
     double[:,::1] nodes, long[:,::1] elements,
     double[:,::1] du, double[::1] p, double[:,::1] hdu, double[::1] hp,
-    double[:,:,::1] sdu, double[:,:,::1] nsdu, double[::1] hs, double[:,::1] f,
+    double[:,:,::1] sdu, double[:,:,::1] nsdu, double[:,::1] f, double[::1] hs,
     double[:,::1] lN, double[:,::1] lDN, double[::1] w, double[::1] coefs,
-    double[::1] LHS, double[::1] RHS):
+    double[::1] LHS, double[::1] RHS, double[::1] R):
 
     cdef long nElms = elements.shape[0]
 
@@ -124,13 +126,12 @@ def OptimizedExplicitVMSAssemble(
     cdef double c2 = coefs[1]
     cdef double nu = coefs[2]
     cdef double dt = coefs[3]
-    cdef double h = 0.0
     cdef double invEpsilon = coefs[4]
+    cdef double h = 0.0
 
     cdef double Ve
     cdef double wGp
-    cdef double norm_a
-    cdef double tau_u, Ru
+    cdef double max_norm_av, tau_u_inv, tau_t, Ru
     cdef double trGradU, trGradHu
     cdef double tmpM, varT1, varT2
     cdef double ph, hph
@@ -138,8 +139,7 @@ def OptimizedExplicitVMSAssemble(
     cdef long[::1] eNIds = np.empty(nPts, dtype=long)
     cdef double[:,::1] DN = np.empty((ndim, nPts), dtype=np.float)
     cdef double[:,::1] av = np.zeros((nPts, ndim), dtype=np.float)
-    cdef double[:,::1] tau_av = np.zeros((nPts, ndim), dtype=np.float)
-    cdef double[::1] tau_t = np.zeros(nPts, dtype=np.float)
+    cdef double[::1] norm_av = np.zeros(nPts, dtype=np.float)
     cdef double[::1] ah = np.zeros(ndim, dtype=np.float)
     cdef double[::1] duh = np.zeros(ndim, dtype=np.float)
     cdef double[::1] subgridF = np.zeros(ndim, dtype=np.float)
@@ -154,6 +154,7 @@ def OptimizedExplicitVMSAssemble(
     cdef double[::1] T1 = np.empty(ndim, dtype=np.float)
     cdef double[::1] lLHS = np.empty(nPts, dtype=np.float)
     cdef double[:,::1] lRHS = np.empty((nPts, 4), dtype=np.float)
+    cdef double[:,::1] lRes = np.empty((nPts, 4), dtype=np.float)
 
     cdef double jac[3][3]
     cdef double invJac[3][3]
@@ -173,6 +174,7 @@ def OptimizedExplicitVMSAssemble(
             lLHS[i] = 0.0
             for j in range(4):
                 lRHS[i,j] = 0.0
+                lRes[i,j] = 0.0
 
         Ve = getGlbDerivatives(nodes, eNIds, lDN, DN, jac, cof, invJac)
 
@@ -236,26 +238,25 @@ def OptimizedExplicitVMSAssemble(
         gradHp[2] = hp[eNIds[0]]*DN[2,0] + hp[eNIds[1]]*DN[2,1] \
                     + hp[eNIds[2]]*DN[2,2] + hp[eNIds[3]]*DN[2,3]
 
-
-        # Add the nonlinear sub-grid scale component for the advective
-        # velocity a
+        
+        # Calc a elementwise
         h = hs[iElm]
         for i in range(nPts):
             for j in range(ndim):
                 av[i,j] = hdu[eNIds[i],j] + sdu[iElm,i,j]
-                tau_av[i,j] = du[eNIds[i],j] + sdu[iElm,i,j]
-
-            # Calculate the stabilization parameters tau
-            norm_a = sqrt(tau_av[i,0]**2.0 + tau_av[i,1]**2.0 + tau_av[i,2]**2.0)
-            tau_u = 1.0 / (c1*nu/(h*h) + c2*norm_a/h)
-            tau_t[i] = 1.0 / (1.0/dt + 1.0/tau_u)
+            norm_av[i] = sqrt(av[i,0]**2 + av[i,1]**2 + av[i,2]**2)
+        # max_norm_av = max(norm_av[0], norm_av[1], norm_av[2], norm_av[3])
+        max_norm_av = max(norm_av)
+        tau_u_inv = c1*nu/(h**2) + c2*max_norm_av/h
+        tau_t = 1.0 / (1.0/dt + tau_u_inv)
 
         # Evaluate velocity sub-grid scales
         for i in range(nPts):
             for j in range(ndim):
-                Ru = tau_t[i]*(av[i,0]*gradU[j,0] + av[i,1]*gradU[j,1] + av[i,2]*gradU[j,2] + gradP[j])
-                nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_t[i]/dt - Ru
+                Ru = tau_t*(av[i,0]*gradU[0,j] + av[i,1]*gradU[1,j] + av[i,2]*gradU[2,j] + gradP[j])
+                nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_t/dt - Ru
 
+        
         # Loop through Gaussian integration points and assemble
         for iGp in range(nGp):
             wGp = w[iGp] * Ve
@@ -266,14 +267,14 @@ def OptimizedExplicitVMSAssemble(
             ah[2] = av[0,2]*lN[iGp,0] + av[1,2]*lN[iGp,1] + av[2,2]*lN[iGp,2] + av[3,2]*lN[iGp,3]
 
             # Evaluate velocity sub-grid scales
-            subgridF[0] = ah[0]*gradU[0,0] + ah[1]*gradU[0,1] + ah[2]*gradU[0,2] + gradP[0]
-            subgridF[1] = ah[0]*gradU[1,0] + ah[1]*gradU[1,1] + ah[2]*gradU[1,2] + gradP[1]
-            subgridF[2] = ah[0]*gradU[2,0] + ah[1]*gradU[2,1] + ah[2]*gradU[2,2] + gradP[2]
+            subgridF[0] = ah[0]*gradU[0,0] + ah[1]*gradU[1,0] + ah[2]*gradU[2,0] + gradP[0]
+            subgridF[1] = ah[0]*gradU[0,1] + ah[1]*gradU[1,1] + ah[2]*gradU[2,1] + gradP[1]
+            subgridF[2] = ah[0]*gradU[0,2] + ah[1]*gradU[1,2] + ah[2]*gradU[2,2] + gradP[2]
 
             for i in range(nPts):
-                nsdu[iElm,i,0] += tau_t[i]*w[iGp]*subgridF[0]*lN[iGp,i]
-                nsdu[iElm,i,1] += tau_t[i]*w[iGp]*subgridF[1]*lN[iGp,i]
-                nsdu[iElm,i,2] += tau_t[i]*w[iGp]*subgridF[2]*lN[iGp,i]
+                nsdu[iElm,i,0] += tau_t*subgridF[0]*lN[iGp,i]
+                nsdu[iElm,i,1] += tau_t*subgridF[1]*lN[iGp,i]
+                nsdu[iElm,i,2] += tau_t*subgridF[2]*lN[iGp,i]
 
             # lLHS
             for a in range(nPts):
@@ -316,9 +317,9 @@ def OptimizedExplicitVMSAssemble(
             sduh[2] = sdu[iElm,0,2]*lN[iGp,0] + sdu[iElm,1,2]*lN[iGp,1] \
                     + sdu[iElm,2,2]*lN[iGp,2] + sdu[iElm,3,2]*lN[iGp,3]
             # ah dot GradHu
-            ahGradHu[0] = ah[0]*gradHu[0,0] + ah[1]*gradHu[0,1] + ah[2]*gradHu[0,2]
-            ahGradHu[1] = ah[0]*gradHu[1,0] + ah[1]*gradHu[1,1] + ah[2]*gradHu[1,2]
-            ahGradHu[2] = ah[0]*gradHu[2,0] + ah[1]*gradHu[2,1] + ah[2]*gradHu[2,2]
+            ahGradHu[0] = ah[0]*gradHu[0,0] + ah[1]*gradHu[1,0] + ah[2]*gradHu[2,0]
+            ahGradHu[1] = ah[0]*gradHu[0,1] + ah[1]*gradHu[1,1] + ah[2]*gradHu[2,1]
+            ahGradHu[2] = ah[0]*gradHu[0,2] + ah[1]*gradHu[1,2] + ah[2]*gradHu[2,2]
 
             # lRHS
             for a in range(nPts):
@@ -332,13 +333,19 @@ def OptimizedExplicitVMSAssemble(
                 T1[2] = nu*(gradHu[2,0]*DN[0,a]+gradHu[2,1]*DN[1,a]+gradHu[2,2]*DN[2,a]) \
                         - hph*DN[2,a] - sduh[2]*varT1
 
-                lRHS[a,0] += duh[0]*lN[iGp,a]*wGp - dt*wGp*((ahGradHu[0]-fh[0])*lN[iGp,a] + T1[0])
-                lRHS[a,1] += duh[1]*lN[iGp,a]*wGp - dt*wGp*((ahGradHu[1]-fh[1])*lN[iGp,a] + T1[1])
-                lRHS[a,2] += duh[2]*lN[iGp,a]*wGp - dt*wGp*((ahGradHu[2]-fh[2])*lN[iGp,a] + T1[2])
-                lRHS[a,3] += ph*lN[iGp,a]*wGp - dt*wGp*(trGradHu*lN[iGp,a]-varT2)*invEpsilon
+                lRHS[a,0] += duh[0]*lN[iGp,a]*wGp
+                lRHS[a,1] += duh[1]*lN[iGp,a]*wGp
+                lRHS[a,2] += duh[2]*lN[iGp,a]*wGp
+                lRHS[a,3] += ph*lN[iGp,a]*wGp
+
+                lRes[a,0] += wGp*((ahGradHu[0]-fh[0])*lN[iGp,a] + T1[0])
+                lRes[a,1] += wGp*((ahGradHu[1]-fh[1])*lN[iGp,a] + T1[1])
+                lRes[a,2] += wGp*((ahGradHu[2]-fh[2])*lN[iGp,a] + T1[2])
+                lRes[a,3] += wGp*(trGradHu*lN[iGp,a]-varT2)*invEpsilon
+
 
         # Assembling
-        assembling(eNIds, lLHS, lRHS, LHS, RHS)
+        assembling(eNIds, lLHS, lRHS, lRes, LHS, RHS, R)
 
 
 
