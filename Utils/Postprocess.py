@@ -178,43 +178,15 @@ def writeStress(model, modelfile, resultfile, nSmp):
     print('Write result to {}.'.format(resultfile))
 
 
-def main():
+def main(paths, modelfile, dispfile, Efile, resultfile, nSmp):
 
-    # Get the points along the centerlines.
-    pathfiles = ['../Examples/lc/CenterLinePath/lc1.pth',
-                 '../Examples/lc/CenterLinePath/lc1_sub1.pth',
-                 '../Examples/lc/CenterLinePath/lc1_sub2.pth',
-                 '../Examples/lc/CenterLinePath/lc1_sub3.pth',
-                 '../Examples/lc/CenterLinePath/lc2.pth',
-                 '../Examples/lc/CenterLinePath/lc2_sub1.pth']
-
-    paths = []
-    for pathfile in pathfiles:
-        paths.append(parseXML(pathfile))
-
-    # paths = [np.array([[0.0, 0.0, 30.0], [0.0, 0.0, 23.0]]),
-    #          np.array([[0.0, 0.0, 20.0], [0.0, 0.0, 13.0]]),
-    #          np.array([[0.0, 0.0, 10.0], [0.0, 0.0, 0.0]])]
-
-
-    # Calc global stress tensor.
-    modelfile = '../Examples/lc/lcSparse-mesh-complete/walls_combined.vtp'
-    dispfile = '../Examples/lc/PaperResults/Results095/displacement_lcSparse560000.vtp'
-    Efile = '../Examples/lc/SparseWallProperties/YoungsModulus0.95.npy'
-    resultfile = '../Examples/lc/PaperResults/Results095/stress_lcSparse560000.vtp'
-
-    # modelfile = '../Examples/CylinderProject/mesh-complete/walls_combined.vtp'
-    # dispfile = '../Examples/CylinderProject/SparseResultRho0.95/WithoutStress/displacement_2cycles37500.vtp'
-    # Efile = '../Examples/CylinderProject/WallProperties/YoungsModulus0.95.npy'
-    # resultfile = '../Examples/CylinderProject/SparseResultRho0.95/stress_2cycles37500.vtp'
-
-    model = calcGlbStress(dispfile, Efile, 100)
+    model = calcGlbStress(dispfile, Efile, nSmp)
 
     # Transform to "Shear" stress along the wall.
-    transformStress(model, paths, 100)
+    transformStress(model, paths, nSmp)
 
     # Write to file.
-    writeStress(model, modelfile, resultfile, 100)
+    writeStress(model, modelfile, resultfile, nSmp)
 
 
 def tellDifference(nElms, nSmp):
@@ -245,5 +217,37 @@ def tellDifference(nElms, nSmp):
 
 if __name__ == "__main__":
 
-    main()
+    # Get the points along the centerlines.
+    pathfiles = ['../Examples/lc/CenterLinePath/lc1.pth',
+                 '../Examples/lc/CenterLinePath/lc1_sub1.pth',
+                 '../Examples/lc/CenterLinePath/lc1_sub2.pth',
+                 '../Examples/lc/CenterLinePath/lc1_sub3.pth',
+                 '../Examples/lc/CenterLinePath/lc2.pth',
+                 '../Examples/lc/CenterLinePath/lc2_sub1.pth']
+
+    paths = []
+    for pathfile in pathfiles:
+        paths.append(parseXML(pathfile))
+
+    # paths = [np.array([[0.0, 0.0, 30.0], [0.0, 0.0, 23.0]]),
+    #          np.array([[0.0, 0.0, 20.0], [0.0, 0.0, 13.0]]),
+    #          np.array([[0.0, 0.0, 10.0], [0.0, 0.0, 0.0]])]
+
+
+    # Calc global stress tensor.
+    modelfile = '../Examples/lc/mesh-complete-5layers/walls_combined.vtp'
+    Efile = '../Examples/lc/5LayersWallProperties/YoungsModulus0.95.npy'
+
+    nTimesteps = np.arange(10000, 800001, 5000, dtype=int)
+    nTimesteps = np.append(nTimesteps, 800001)
+    for i in nTimesteps:
+        dispfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/displacement_lcSparse{}.vtp'.format(i)
+        resultfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/stress_{}.vtp'.format(i)
+        main(paths, modelfile, dispfile, Efile, resultfile, 100)
+
+    # modelfile = '../Examples/CylinderProject/mesh-complete/walls_combined.vtp'
+    # dispfile = '../Examples/CylinderProject/SparseResultRho0.95/WithoutStress/displacement_2cycles37500.vtp'
+    # Efile = '../Examples/CylinderProject/WallProperties/YoungsModulus0.95.npy'
+    # resultfile = '../Examples/CylinderProject/SparseResultRho0.95/stress_2cycles37500.vtp'
+
     # tellDifference(5074, 100)
