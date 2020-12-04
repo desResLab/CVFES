@@ -356,29 +356,27 @@ class GMRF:
 
 def generateGFs():
 
-    solidfile = 'Examples/CylinderProject/refine-mesh-complete/walls_combined.vtp'
-    noisefile = 'Examples/CylinderProject/RefineWallProperties/noise.npy'
-    totalNodes = 7628
-    # resThickness = 'Examples/CylinderProject/RefineWallProperties/thickness'
-    resThickness = 'cyThickness'
-    thick_mu = 0.4
-    thick_sigma = 0.04
-    thick_lb = 0.28
-    # resE = 'Examples/CylinderProject/RefineWallProperties/YoungsModulus'
-    resE = 'cyYoungsModulus'
-    E_mu = 7.0e6
-    E_sigma = 7.0e5
+    # solidfile = 'Examples/CylinderProject/refine-more-mesh-complete/walls_combined.vtp'
+    # noisefile = 'Examples/CylinderProject/MoreRefineWallPropertiesTest/noise.npy'
+    # totalNodes = 16557 #2565 #7628 #16557
+    # resThickness = 'Examples/CylinderProject/MoreRefineWallPropertiesTest/cyThickness'
+    # thick_mu = 0.4
+    # thick_sigma = 0.04
+    # thick_lb = 0.28
+    # resE = 'Examples/CylinderProject/MoreRefineWallPropertiesTest/cyYoungsModulus'
+    # E_mu = 7.0e6
+    # E_sigma = 7.0e5
 
 
-    # solidfile = 'Examples/lc/lcSparse-mesh-complete/walls_combined.vtp'
-    # totalNodes = 22581
-    # resThickness = 'Examples/lc/SparseWallProperties/thickness'
-    # thick_mu = 0.075
-    # thick_sigma = 0.017
-    # thick_lb = 0.024
-    # resE = 'Examples/lc/SparseWallProperties/YoungsModulus'
-    # E_mu = 1.15e7
-    # E_sigma = 1.7e6
+    solidfile = 'Examples/lc/mesh-complete-5layers/walls_combined.vtp'
+    totalNodes = 32091 # 22581
+    resThickness = 'Examples/lc/lc5LayersWallProperties/lcThickness'
+    thick_mu = 0.075
+    thick_sigma = 0.017
+    thick_lb = 0.024
+    resE = 'Examples/lc/lc5LayersWallProperties/lcYoungsModulus'
+    E_mu = 1.15e7
+    E_sigma = 1.7e6
 
 
     samplenum = 100
@@ -397,9 +395,9 @@ def generateGFs():
 
 def checkGFs():
 
-    solidfile = 'Examples/CylinderProject/refine-mesh-complete/walls_combined.vtp'
-    resThickness = 'cyThickness'
-    resE = 'cyYoungsModulus'
+    solidfile = 'Examples/lc/mesh-complete-5layers/walls_combined.vtp'
+    resThickness = 'Examples/lc/5LayersWallProperties/cyThickness'
+    resE = 'Examples/lc/5LayersWallProperties/cyYoungsModulus'
 
     rhos = np.array([0.95, 3.7, 7.2])
     for rho in rhos:
@@ -408,6 +406,6 @@ def checkGFs():
 
 if __name__ == '__main__':
 
-    # generateGFs()
-    checkGFs()
+    generateGFs()
+    # checkGFs()
 
