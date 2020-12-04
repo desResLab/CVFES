@@ -294,15 +294,18 @@ cdef void ShearTransform(double[:,:,::1] nodes, long[::1] eNIds,
     T[0,2] = T[1,0]*T[2,1] - T[1,1]*T[2,0]
 
 
+# nodeT - Transform matrix for each node of each sample - nSmp*nNode*3*3
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def TranformStress(double[:,:,::1] nodes, long[:,::1] elements, double[:,:,::1] elmCtrlPts,
-                   double[:,:,:,::1] stress, double[:,:,:,::1] tStress):
+                   double[:,:,:,::1] stress, double[:,:,:,::1] tStress,
+                   double[:,::1] u, double[:,::1]tU):
                    # double[:,::1] elmZ): # for debugging
 
     cdef long nElms = elements.shape[0]
-    cdef long iElm, iSmp
+    cdef long nNodes = nodes.shape[1]
+    cdef long iElm, iSmp, iNode
 
     nPts = elements.shape[1]
     ndim = nodes.shape[2]
@@ -314,8 +317,10 @@ def TranformStress(double[:,:,::1] nodes, long[:,::1] elements, double[:,:,::1] 
     cdef double[:,::1] edges = np.empty((2,3), dtype=np.float)
     # tmp variables
     cdef double[:,::1] TS = np.empty((nPts, nPts), dtype=np.float)
+    cdef double[:,:,:,::1] nodeT = np.zeros((nSmp, nNodes, 3, 3))
 
     cdef long i, j, m, n
+    cdef double vecLength
 
     for iElm in range(nElms):
 
@@ -348,8 +353,35 @@ def TranformStress(double[:,:,::1] nodes, long[:,::1] elements, double[:,:,::1] 
             tStress[iElm,iSmp,2,1] = TS[2,0]*T[1,0] + TS[2,1]*T[1,1] + TS[2,2]*T[1,2]
             tStress[iElm,iSmp,2,2] = TS[2,0]*T[2,0] + TS[2,1]*T[2,1] + TS[2,2]*T[2,2]
 
+            # Collect the transform matrix for each node.
+            for i in range(nPts):
+                nodeT[iSmp,eNIds[i],0,0] += T[0,0]
+                nodeT[iSmp,eNIds[i],0,1] += T[0,1]
+                nodeT[iSmp,eNIds[i],0,2] += T[0,2]
+                nodeT[iSmp,eNIds[i],1,0] += T[1,0]
+                nodeT[iSmp,eNIds[i],1,1] += T[1,1]
+                nodeT[iSmp,eNIds[i],1,2] += T[1,2]
+                nodeT[iSmp,eNIds[i],2,0] += T[2,0]
+                nodeT[iSmp,eNIds[i],2,1] += T[2,1]
+                nodeT[iSmp,eNIds[i],2,2] += T[2,2]
+
+
             # # for debugging, store the z axis
             # if iSmp == 0:
             #     elmZ[iElm,0] = T[2,0]
             #     elmZ[iElm,1] = T[2,1]
             #     elmZ[iElm,2] = T[2,2]
+
+    # Make transform matrix for each node containing unit vector.
+    for iSmp in range(nSmp):
+        for iNode in range(nNodes):
+            for i in range(3):
+                vecLength = sqrt(nodeT[iSmp,iNode,i,0]**2 + nodeT[iSmp,iNode,i,1]**2 + nodeT[iSmp,iNode,i,2]**2)
+                nodeT[iSmp,iNode,i,0] = nodeT[iSmp,iNode,i,0] / vecLength
+                nodeT[iSmp,iNode,i,1] = nodeT[iSmp,iNode,i,1] / vecLength
+                nodeT[iSmp,iNode,i,2] = nodeT[iSmp,iNode,i,2] / vecLength
+
+            # Transform the displacement Us = T*U.
+            for i in range(3):
+                tU[iNode*3+i,iSmp] = nodeT[iSmp,iNode,i,0]*u[iNode*3,iSmp] + nodeT[iSmp,iNode,i,1]*u[iNode*3+1,iSmp] + nodeT[iSmp,iNode,i,2]*u[iNode*3+2,iSmp]
+

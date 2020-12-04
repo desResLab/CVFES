@@ -143,8 +143,9 @@ def transformStress(model, paths, nSmp):
     # for debugging
     # model.elmZ = np.empty((model.nElements, 3))
     model.tStress = np.empty((model.nElements, nSmp, 3, 3))
+    model.tU = np.zeros((model.nNodes*3, nSmp))
     TranformStress(model.updateNodes, model.elements, elmCtrlPts,
-                   model.glbStress, model.tStress)
+                   model.glbStress, model.tStress, model.u, model.tU)
                    # model.glbStress, model.tStress, model.elmZ)
 
 
@@ -164,6 +165,11 @@ def writeStress(model, modelfile, resultfile, nSmp):
             stressVec = numpy_to_vtk(model.tStress[:,iSmp,idx[i,0], idx[i,1]])
             stressVec.SetName('{}_{:03d}'.format(name, iSmp))
             polyDataModel.GetCellData().AddArray(stressVec)
+
+    for iSmp in range(nSmp):
+        uVec = numpy_to_vtk(model.tU[:,iSmp].reshape((model.nNodes, 3)))
+        uVec.SetName('tDisplacement_{:03d}'.format(iSmp))
+        polyDataModel.GetPointData().AddArray(uVec)
 
     # # for debugging
     # elmZVec = numpy_to_vtk(model.elmZ)
