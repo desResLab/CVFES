@@ -158,5 +158,5 @@ class TransientExplicitVMSSolver(TransientSolver):
 
     def __initPhysicSolver__(self, comm, meshes, config):
         self.fluidSolver = ExplicitVMSSolver(comm, meshes['lumen'], config)
-        self.solidSolver = GeneralizedAlphaSolidSolver(comm, meshes['wall'], config)
+        self.solidSolver = ExplicitVMSSolidSolver(comm, meshes['wall'], config)
 

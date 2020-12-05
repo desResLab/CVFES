@@ -125,3 +125,9 @@ class ExplicitVMSSolver(PhysicsSolver):
         # resP = res[:,-1].ravel()
         # self.mesh.Save(filename, counter, resDu.reshape(self.mesh.nNodes, 3), resP, 'residual')
 
+
+class ExplicitVMSSolidSolver(PhysicsSolver):
+    
+    def __init__(self, comm, mesh, config):
+        PhysicsSolver.__init__(self, comm, mesh, config)
+        
