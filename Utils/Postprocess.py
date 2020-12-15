@@ -221,39 +221,75 @@ def tellDifference(nElms, nSmp):
     print('The difference percentage is {}'.format(np.linalg.norm(stresses[1]-stresses[0])/np.linalg.norm(stresses[0])))
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    # Get the points along the centerlines.
-    pathfiles = ['../Examples/lc/CenterLinePath/lc1.pth',
-                 '../Examples/lc/CenterLinePath/lc1_sub1.pth',
-                 '../Examples/lc/CenterLinePath/lc1_sub2.pth',
-                 '../Examples/lc/CenterLinePath/lc1_sub3.pth',
-                 '../Examples/lc/CenterLinePath/lc2.pth',
-                 '../Examples/lc/CenterLinePath/lc2_sub1.pth']
+#     # Get the points along the centerlines.
+#     pathfiles = ['../Examples/lc/CenterLinePath/lc1.pth',
+#                  '../Examples/lc/CenterLinePath/lc1_sub1.pth',
+#                  '../Examples/lc/CenterLinePath/lc1_sub2.pth',
+#                  '../Examples/lc/CenterLinePath/lc1_sub3.pth',
+#                  '../Examples/lc/CenterLinePath/lc2.pth',
+#                  '../Examples/lc/CenterLinePath/lc2_sub1.pth']
 
-    paths = []
-    for pathfile in pathfiles:
-        paths.append(parseXML(pathfile))
+#     paths = []
+#     for pathfile in pathfiles:
+#         paths.append(parseXML(pathfile))
 
-    # paths = [np.array([[0.0, 0.0, 30.0], [0.0, 0.0, 23.0]]),
-    #          np.array([[0.0, 0.0, 20.0], [0.0, 0.0, 13.0]]),
-    #          np.array([[0.0, 0.0, 10.0], [0.0, 0.0, 0.0]])]
+#     # Calc global stress tensor.
+#     # modelfile = '../Examples/lc/mesh-complete-5layers/walls_combined.vtp'
+#     # Efile = '../Examples/lc/lc5LayersWallProperties/lcYoungsModulus0.95.npy'
 
+#     # nTimesteps = np.arange(5000, 800000, 5000, dtype=int)
+#     # nTimesteps = np.append(nTimesteps, 800001)
+
+#     # for i in nTimesteps:
+#     #     # dispfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/displacement_lcSparse{}.vtp'.format(i)
+#     #     # resultfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/stress_{}.vtp'.format(i)
+
+#     #     dispfile = '/media/xli/PHDWORK_XLI/2020PaperResults/lc5LayersPulsatileResults/Results095/displacement_{}.vtp'.format(i)
+#     #     resultfile = '/media/xli/PHDWORK_XLI/2020PaperResults/lc5LayersPulsatileResults/Results095/stress_{}.vtp'.format(i)
+
+#     #     main(paths, modelfile, dispfile, Efile, resultfile, 100)
+
+
+#     # dispfile = '/media/xli/PHDWORK_XLI/2020PaperResults/lc5LayersPulsatileResults/Results72/displacement_800001.vtp'
+#     # resultfile = '/media/xli/PHDWORK_XLI/2020PaperResults/lc5LayersPulsatileResults/Results72/stress_800001.vtp'
+#     # main(paths, modelfile, dispfile, Efile, resultfile, 100)
+
+
+#     modelfile = '../Examples/lc/lcSparse-mesh-complete/walls_combined.vtp'
+#     Efile = '../Examples/lc/SparseWallProperties/YoungsModulus0.95.npy'
+#     dispfile = '/media/xli/PHDWORK_XLI/2020PaperResults/lcSparseSteadyState/Results72/displacement_lcSparse560000.vtp'
+#     resultfile = '/media/xli/PHDWORK_XLI/2020PaperResults/lcSparseSteadyState/Results72/stress_lcSparse560000.vtp'
+#     main(paths, modelfile, dispfile, Efile, resultfile, 100)
+
+
+#     # modelfile = '../Examples/CylinderProject/mesh-complete/walls_combined.vtp'
+#     # dispfile = '../Examples/CylinderProject/SparseResultRho0.95/WithoutStress/displacement_2cycles37500.vtp'
+#     # Efile = '../Examples/CylinderProject/WallProperties/YoungsModulus0.95.npy'
+#     # resultfile = '../Examples/CylinderProject/SparseResultRho0.95/stress_2cycles37500.vtp'
+
+#     # tellDifference(5074, 100)
+
+
+if __name__ == '__main__':
+    
+    paths = [np.array([[0.0, 0.0, 30.0], [0.0, 0.0, 23.0]]),
+             np.array([[0.0, 0.0, 20.0], [0.0, 0.0, 13.0]]),
+             np.array([[0.0, 0.0, 10.0], [0.0, 0.0, 0.0]])]
 
     # Calc global stress tensor.
-    modelfile = '../Examples/lc/mesh-complete-5layers/walls_combined.vtp'
-    Efile = '../Examples/lc/5LayersWallProperties/YoungsModulus0.95.npy'
+    modelfile = '../Examples/CylinderProject/refine-more-mesh-complete/walls_combined.vtp'
+    Efile = '../Examples/CylinderProject/MoreRefineWallProperties/cyYoungsModulus0.95.npy'
 
-    nTimesteps = np.arange(10000, 800001, 5000, dtype=int)
-    nTimesteps = np.append(nTimesteps, 800001)
+    # nTimesteps = np.arange(1000, 150001, 1000, dtype=int)
+    nTimesteps = np.arange(1000, 50001, 1000, dtype=int)
+
     for i in nTimesteps:
-        dispfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/displacement_lcSparse{}.vtp'.format(i)
-        resultfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/stress_{}.vtp'.format(i)
+        # dispfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/displacement_lcSparse{}.vtp'.format(i)
+        # resultfile = '../Examples/lc/PaperResults/PulResults5LayersLcInflow095/stress_{}.vtp'.format(i)
+
+        dispfile = '/media/xli/PHDWORK_XLI/2020PaperResults/cyPulsatileResults/cyPulResults095/displacement_cySS{}.vtp'.format(i)
+        resultfile = '/media/xli/PHDWORK_XLI/2020PaperResults/cyPulsatileResults/cyPulResults095/stress_cySS{}.vtp'.format(i)
         main(paths, modelfile, dispfile, Efile, resultfile, 100)
 
-    # modelfile = '../Examples/CylinderProject/mesh-complete/walls_combined.vtp'
-    # dispfile = '../Examples/CylinderProject/SparseResultRho0.95/WithoutStress/displacement_2cycles37500.vtp'
-    # Efile = '../Examples/CylinderProject/WallProperties/YoungsModulus0.95.npy'
-    # resultfile = '../Examples/CylinderProject/SparseResultRho0.95/stress_2cycles37500.vtp'
-
-    # tellDifference(5074, 100)
