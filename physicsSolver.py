@@ -77,8 +77,8 @@ class PhysicsSolver:
     def Save(self, filename, counter):
         pass
 
-    def SaveDisplacement(self, filename, counter):
-        pass
+    # def SaveDisplacement(self, filename, counter):
+    #     pass
 
     def Steady(self):
         return False

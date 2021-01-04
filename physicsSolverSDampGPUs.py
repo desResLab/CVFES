@@ -412,7 +412,8 @@ class GPUSolidSolver(PhysicsSolver):
         self.comm.Bcast(self.LHS, root=0)
 
 
-    def SaveDisplacement(self, filename, counter):
+    # def SaveDisplacement(self, filename, counter):
+    def Save(self, filename, counter):
         # Prepare/Union the displacement.
         self.UnionDisplacement(self.srcU)
         self.UnionDisplacement(self.srcUP)
@@ -424,36 +425,36 @@ class GPUSolidSolver(PhysicsSolver):
         # Barrier everyone!
         self.comm.Barrier()
 
-    def Save(self, filename, counter):
-        # Prepare/Union the displacement.
-        self.UnionDisplacement(self.srcU)
+    # def Save(self, filename, counter):
+    #     # Prepare/Union the displacement.
+    #     self.UnionDisplacement(self.srcU)
 
-        # Prepare stress.
-        update_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
+    #     # Prepare stress.
+    #     update_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
 
-        calc_stress_events = []
-        for iColorGrp in range(len(self.colorGps_buf)):
-            calc_s_event = \
-            self.program.calc_stress(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
-                                      np.int64(len(self.mesh.colorGroups[iColorGrp])),
-                                      np.int64(self.nNodes), np.int64(self.nSmp),
-                                      self.pVals_buf, self.nodes_buf,
-                                      self.colorGps_buf[iColorGrp], self.colorGps_elmIds_buf[iColorGrp],
-                                      self.elmE_buf[iColorGrp], self.up_buf, self.u_buf, self.stress_buf,
-                                      wait_for=[update_u_event])
-            calc_stress_events.append(calc_s_event)
+    #     calc_stress_events = []
+    #     for iColorGrp in range(len(self.colorGps_buf)):
+    #         calc_s_event = \
+    #         self.program.calc_stress(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
+    #                                   np.int64(len(self.mesh.colorGroups[iColorGrp])),
+    #                                   np.int64(self.nNodes), np.int64(self.nSmp),
+    #                                   self.pVals_buf, self.nodes_buf,
+    #                                   self.colorGps_buf[iColorGrp], self.colorGps_elmIds_buf[iColorGrp],
+    #                                   self.elmE_buf[iColorGrp], self.up_buf, self.u_buf, self.stress_buf,
+    #                                   wait_for=[update_u_event])
+    #         calc_stress_events.append(calc_s_event)
 
-        stress_copy_event = cl.enqueue_copy(self.queue, self.stress, self.stress_buf, wait_for=calc_stress_events)
-        stress_copy_event.wait()
+    #     stress_copy_event = cl.enqueue_copy(self.queue, self.stress, self.stress_buf, wait_for=calc_stress_events)
+    #     stress_copy_event.wait()
 
-        self.UnionStress()
+    #     self.UnionStress()
 
-        if self.rank == 0:
-            self.mesh.Save(filename, counter,
-                           self.srcU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof),
-                           self.glbStresses)
-        # Barrier everyone!
-        self.comm.Barrier()
+    #     if self.rank == 0:
+    #         self.mesh.Save(filename, counter,
+    #                        self.srcU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof),
+    #                        self.glbStresses)
+    #     # Barrier everyone!
+    #     self.comm.Barrier()
 
     def UnionDisplacement(self, quant):
 

@@ -79,8 +79,9 @@ class CVFES:
         # TODO:: Write the solution has been calculated into files when program has been cutoff accidentally.
 
         solverSwitcher = {
-            'transient generalized-a': TransientGeneralizedASolver,
             'transient': TransientSolver,
+            'transient GPU': TransientSolverGPU,
+            'transient generalized-a': TransientGeneralizedASolver,
             'explicit VMS': TransientExplicitVMSSolver
         }
 

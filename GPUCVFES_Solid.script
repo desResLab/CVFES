@@ -3,13 +3,21 @@
 #$ -M xli26@nd.edu          # Email address for job notification
 #$ -m e                     # Send mail when job begins, ends and aborts
 #$ -q gpu@@appliedmath_gpu
-#$ -l gpu_card=2
-#$ -pe smp 2                # Specify parallel environment and legal core size
-#$ -N CVFESGPU_Solid        # Specify job name
-##$ -t 1-9:2                # Specify number of tasks in array
+#$ -l gpu_card=4
+#$ -pe smp 4                # Specify parallel environment and legal core size
+#$ -N CVFESGPU_Solid_PP     # Specify job name
+#$ -t 1-3                   # Specify number of tasks in array
 
 
 module load python
 module load cuda
 
-mpiexec -n $NSLOTS python3 -m mpi4py main.py -f cfg/lcSparse.cfg
+#set cfgfiles = ( PaperCasesCfg/input095.cfg PaperCasesCfg/input37.cfg PaperCasesCfg/input72.cfg )
+#set cfgfiles = ( PaperCasesCfg/fineMesh095.cfg PaperCasesCfg/fineMesh37.cfg PaperCasesCfg/fineMesh72.cfg )
+#set cfgfiles = ( PaperCasesCfg/moreFineMesh095.cfg PaperCasesCfg/moreFineMesh37.cfg PaperCasesCfg/moreFineMesh72.cfg )
+#set cfgfiles = ( PaperCasesCfg/lcSparse095.cfg PaperCasesCfg/lcSparse37.cfg PaperCasesCfg/lcSparse72.cfg )
+set cfgfiles = ( PaperCasesCfg/lc5Layers095.cfg PaperCasesCfg/lc5Layers37.cfg PaperCasesCfg/lc5Layers72.cfg )
+
+#mpiexec -n $NSLOTS python3 -m mpi4py main.py -f cfg/input.cfg
+mpiexec -n $NSLOTS python3 -m mpi4py main.py -f PaperCasesCfg/lcSparse37.cfg
+#mpiexec -n $NSLOTS python3 -m mpi4py main.py -f $cfgfiles[$SGE_TASK_ID]

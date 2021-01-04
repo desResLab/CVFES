@@ -18,7 +18,8 @@ from cvconfig import CVConfig
 from mpi4py import MPI
 from mesh import *
 from physicsSolver import *
-from physicsSolverGPUs import *
+# from physicsSolverGPUs import *
+from physicsSolverSDampGPUs import *
 from generalizedAlphaSolver import *
 # from generalizedAlphaSolverRe import *
 from explicitVMSSolver import *
@@ -31,14 +32,6 @@ import sys
 __author__ = "Xue Li"
 __copyright__ = "Copyright 2018, the CVFES project"
 
-
-TAG_COMM_DOF = 211
-TAG_COMM_DOF_VALUE = 212
-# TAG_ELM_ID = 221
-TAG_STRESSES = 222
-TAG_DISPLACEMENT = 223
-# TAG_UNION = 224
-TAG_CHECKING_STIFFNESS = 311
 
 
 """ This is the big solver we are going to use here.
@@ -95,11 +88,7 @@ class TransientSolver(Solver):
         """ Initialize the fluid and solid solver. """
 
         self.fluidSolver = FluidSolver(comm, meshes['lumen'], config)
-        # self.solidSolver = SolidSolver(comm, meshes['wall'], config)
-        # self.solidSolver = SolidSolver(comm, meshes['wall'], config,
-        #                                self.appPressures[self.restartTimestep])
-
-        self.solidSolver = GPUSolidSolver(comm, meshes['wall'], config)
+        self.solidSolver = SolidSolver(comm, meshes['wall'], config)
 
     def Solve(self):
 
@@ -122,13 +111,26 @@ class TransientSolver(Solver):
 
             if timeStep+1 in saveSteps:
                 self.fluidSolver.Save(self.saveStressFilename, timeStep+1)
-                # self.solidSolver.Save(self.saveStressFilename, timeStep+1)
-                self.solidSolver.SaveDisplacement(self.saveStressFilename, timeStep+1)
+                self.solidSolver.Save(self.saveStressFilename, timeStep+1)
+                # self.solidSolver.SaveDisplacement(self.saveStressFilename, timeStep+1)
 
             # Tell if flow becomes steady with constant inflow.
             if self.fluidSolver.Steady():
                 print('Fluid reaches steady at time {}s'.format(t))
                 break
+
+
+class TransientSolverGPU(TransientSolver):
+    """Structure solver on GPU"""
+    def __init__(self, arg):
+        # super(TransientSolverGPU, self).__init__()
+        TransientSolver.__init__(self, comm, meshes, config)
+
+    def __initPhysicSolver__(self, comm, meshes, config):
+        """ Initialize the fluid and solid solver. """
+
+        self.fluidSolver = FluidSolver(comm, meshes['lumen'], config)
+        self.solidSolver = GPUSolidSolver(comm, meshes['wall'], config)
 
 
 """ For generalized-a method:
