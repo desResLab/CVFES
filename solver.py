@@ -24,6 +24,7 @@ from generalizedAlphaSolver import *
 # from generalizedAlphaSolverRe import *
 from explicitVMSSolver import *
 
+from timeit import default_timer as timer
 # from math import floor
 # from math import cos, pi
 import math
@@ -40,6 +41,10 @@ class Solver:
 
     def __init__(self, comm, meshes, config): # the config is actually solver config
         self.comm = comm
+        # For using convenient.
+        # self.size = comm.Get_size()
+        self.rank = comm.Get_rank()
+
         self.meshes = meshes
 
         self.saveResNum = config.saveResNum
@@ -92,10 +97,17 @@ class TransientSolver(Solver):
 
     def Solve(self):
 
+        # Print out debug information, time.
+        if self.rank == 0:
+            print('Time\tResidual norm\tTime used')
+
         # Calculate when to save the result into file.
         saveSteps = np.linspace(0, self.nTimeSteps, self.saveResNum+1, dtype=int)
 
         for timeStep in range(self.restartTimestep, self.nTimeSteps):
+
+            start = timer()
+            
             # t = round(self.t[timeStep], 4)
             dt = self.t[timeStep+1] - self.t[timeStep]
 
@@ -108,6 +120,12 @@ class TransientSolver(Solver):
             # Refresh the fluid solver's context
             # before next loop start.
             self.fluidSolver.RefreshContext(self.solidSolver)
+
+            end = timer()
+            
+            # Print out debug information, time.
+            if self.rank == 0:
+                print('{}\t{:10.1f} ms'.format(self.t[timeStep], (end-start) * 1000.0))
 
             if timeStep+1 in saveSteps:
                 self.fluidSolver.Save(self.saveStressFilename, timeStep+1)
@@ -122,7 +140,7 @@ class TransientSolver(Solver):
 
 class TransientSolverGPU(TransientSolver):
     """Structure solver on GPU"""
-    def __init__(self, arg):
+    def __init__(self, comm, meshes, config):
         # super(TransientSolverGPU, self).__init__()
         TransientSolver.__init__(self, comm, meshes, config)
 

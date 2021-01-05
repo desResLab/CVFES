@@ -271,9 +271,9 @@ class GPUSolidSolver(PhysicsSolver):
         if self.stressFilename is not None:
             if self.useConstantStress:
                 if t > ramp_T:
-                    appTrac = self.strac
+                    appTrac = self.etrac
                 else:
-                    a = b = self.strac/2.0
+                    a = b = self.etrac/2.0
                     n = math.pi/self.constant_T
                     appTrac = a - b*math.cos(n*t)
             

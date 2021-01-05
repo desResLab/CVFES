@@ -52,6 +52,16 @@ class CVFES:
                        'wall': SolidMesh(self.comm, config, meshes['wall'], equations['solid'])}
         self.name = config.name
 
+        # Debug info printout.
+        if self.rank == 0:
+            print('Model name: {}'.format(config.name))
+            print('Fluid mesh size: {} elements, {} nodes'.format(self.meshes['lumen'].nElements,
+                self.meshes['lumen'].nNodes))
+            print('Structure mesh size: {} elements, {} nodes'.format(self.meshes['wall'].nElements,
+                self.meshes['wall'].nNodes))
+            print('Solver method: {}'.format(config.solver.method))
+            print('Number of samples: {}'.format(config.solver.nSmp))
+
     def Distribute(self):
         # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         wallPartName = 'MeshPartition/Wall_{}_{}_{}'.format(self.name, self.size, self.rank)
