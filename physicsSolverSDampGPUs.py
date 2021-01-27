@@ -86,6 +86,7 @@ class GPUSolidSolver(PhysicsSolver):
 
         self.lclNCommNodes = mesh.lclNCommNodes
         self.lclNCommDof = self.lclNCommNodes * mesh.dof
+        self.lclNSpecialHeadDof = mesh.lclNSpecialHead * mesh.dof
         self.lclBoundary = mesh.lclBoundary
 
         # Damp coef.
@@ -376,8 +377,8 @@ class GPUSolidSolver(PhysicsSolver):
 
         # Apply boundary condition.
         self.ApplyBoundaryCondition(self.srcURes)
-
-        update_u_event = cl.enqueue_copy(self.queue, self.ures_buf, self.srcURes[:self.lclNCommDof])
+        # Enforce the applied boundary condition back to GPU. <lclNSpecialHeadDof>
+        update_u_event = cl.enqueue_copy(self.queue, self.ures_buf, self.srcURes[:self.lclNSpecialHeadDof])
 
         # Add on the global force.
         appTrac_copy_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
@@ -449,6 +450,10 @@ class GPUSolidSolver(PhysicsSolver):
 
 
     def Save(self, filename, counter):
+
+        # Copy out the displacement from GPU to CPU.
+        copy_u_event = cl.enqueue_copy(self.queue, self.srcU, self.u_buf)
+
         # Prepare/Union the displacement.
         resU = self.UnionDisplacement(self.srcU)
 
@@ -462,7 +467,9 @@ class GPUSolidSolver(PhysicsSolver):
     def UnionDisplacement(self, quant):
 
         if self.size == 1:
-            return quant
+            resU = np.empty((self.ndof, self.nSmp))
+            resU[self.dofs,:] = quant
+            return resU
 
         if self.rank == 0:
 
@@ -479,7 +486,7 @@ class GPUSolidSolver(PhysicsSolver):
                 dofs = dofBuf[:nodesInfo.Get_count(MPI.INT64_T)]
                 self.comm.Recv(uBuf, nodesSource, TAG_DISPLACEMENT, nodesInfo)
                 # Flag the nodes uBuf acctually contains.
-                resU[dofs,:] = uBuf[:len(dofs)*self.nSmp].reshape(len(dofs), self.nSmp)
+                resU[dofs,:] = uBuf[:len(dofs)]
 
         else:
             self.comm.Send(self.dofs, 0, TAG_NODE_ID)

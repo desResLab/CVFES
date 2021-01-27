@@ -4,8 +4,9 @@ import os.path
 from mesh import *
 
 # last color is reserved
-def MeshColoring(name, mesh, nColors=23):
+def MeshColoring(name, mesh, nColors=23, maxNeighbors=50):
 
+    nNodes = mesh.nNodes
     nElms = mesh.nElements
     elmNodeIds = mesh.elementNodeIds
 
@@ -19,12 +20,17 @@ def MeshColoring(name, mesh, nColors=23):
 
     # If failed, generate the color group and save in file.
     # 1. Find the neighbors.
+    nodeElmNeighbors = np.empty((nNodes, maxNeighbors), dtype=int)
+    nodeElmNeighborsCount = np.zeros(nNodes, dtype=int)
+    for iElm in range(nElms):
+        for iNode in elmNodeIds[iElm]:
+            nodeElmNeighbors[iNode,nodeElmNeighborsCount[iNode]] = iElm
+            nodeElmNeighborsCount[iNode] += 1
+
     neighbors = [[] for _ in range(nElms)]
-    for i in range(nElms):
-        for j in range(i+1, nElms):
-            if not set(elmNodeIds[i]).isdisjoint(elmNodeIds[j]):
-                neighbors[i].append(j)
-                neighbors[j].append(i)
+    for iElm in range(nElms):
+        for iNode in elmNodeIds[iElm]:
+            neighbors[iElm].extend(nodeElmNeighbors[iNode,:nodeElmNeighborsCount[iNode]])
     # Clear the redundent neighbors.
     neighbors = np.array(neighbors)
     for i in range(nElms):

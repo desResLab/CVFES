@@ -15,16 +15,23 @@ TAG_ELMID       = 114
 def CalcLocalInfo(size, mesh):
     """ Calculate local node Ids from the partitioning result. """
 
-    # Common node ids' local id.
-    mesh.lclNCommNodes = len(mesh.commNodeIds)
-
     # Local node ids contained in each partation.
     lclNodeIds = np.sort(np.unique(mesh.elementNodeIds.ravel()))
 
     mesh.lclNNodes = len(lclNodeIds)
     mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
+    # 1. First chunk is the common nodes' ids.
+    mesh.lclNCommNodes = len(mesh.commNodeIds)
     mesh.lclNodeIds[:mesh.lclNCommNodes] = mesh.commNodeIds
-    mesh.lclNodeIds[mesh.lclNCommNodes:] = lclNodeIds[~np.in1d(lclNodeIds, mesh.commNodeIds)]
+    # 2. Second chunk is the boundary nodes' ids if have any.
+    lclBdyFlag = np.in1d(lclNodeIds, mesh.boundary)
+    mesh.lclNBoundary = np.sum(lclBdyFlag)
+    # Length of the beginning chunk that needs to transfer back and forth btw GPUs and CPUs.
+    mesh.lclNSpecialHead = mesh.lclNCommNodes + mesh.lclNBoundary
+    mesh.lclNodeIds[mesh.lclNCommNodes:mesh.lclNSpecialHead] = lclNodeIds[lclBdyFlag]
+    # 3. Fill up the rest with the normal nodes that can always stay in GPUs.
+    lclNormalFlag = np.logical_and(~np.in1d(lclNodeIds, mesh.commNodeIds), ~lclBdyFlag)
+    mesh.lclNodeIds[mesh.lclNSpecialHead:] = lclNodeIds[lclNormalFlag]
 
     # Elemental local node ids.
     sorter = np.argsort(mesh.lclNodeIds)
@@ -43,10 +50,18 @@ def MeshPartition(name, comm, mesh):
     if size == 1:
         # Assign global info to local directly.
         mesh.lclNCommNodes = 0
+        
         mesh.lclNNodes = mesh.nNodes
-        mesh.lclNodeIds = np.arange(mesh.nNodes, dtype=int)
-        mesh.lclElmNodeIds = mesh.elementNodeIds
-        mesh.lclBoundary = mesh.boundary
+        mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
+        mesh.lclNSpecialHead = mesh.lclNBoundary = len(mesh.boundary)
+        mesh.lclNodeIds[:mesh.lclNBoundary] = mesh.boundary
+        lclNodeIds = np.arange(mesh.lclNNodes, dtype=int)
+        mesh.lclNodeIds[mesh.lclNBoundary:] = lclNodeIds[~np.in1d(lclNodeIds, mesh.boundary)]
+
+        sorter = np.argsort(mesh.lclNodeIds)
+        mesh.lclElmNodeIds = sorter[np.searchsorted(mesh.lclNodeIds, mesh.elementNodeIds, sorter=sorter)]
+
+        mesh.lclBoundary = np.where(np.in1d(mesh.lclNodeIds, mesh.boundary))[0]
         return 0
 
 
