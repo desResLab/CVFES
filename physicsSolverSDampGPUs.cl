@@ -25,10 +25,10 @@ void TtKT(const double *T, const double *K,
    - Ku: (nGNodes*3, nSmp)  the product result after assembling.
  */
 
-__kernel void assemble_K_M_P(const long nNodes, const long nSmp, const double pressure,
-                             const __global double *pVals,
-                             const __global double *nodes, const __global long *elmNodeIds,
-                             const __global double *thickness, const __global double *elmThicknessE,
+__kernel void assemble_K_M_P(const long nSmp, const double pressure,
+                             const __global double *pVals, const __global double *nodes,
+                             const __global long *elmNodeIds, const __global double *thickness,
+                             const __global double *elmThicknessE,
                              const __global double *u, __global double *Ku,
                              __global double *LM, __global double *P)
 {
@@ -120,8 +120,6 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp, const double pr
 
     for (uint iSmp = 0; iSmp < nSmp; iSmp++)
     {
-        // sKu = Ku + iSmp * nNodes * 3;
-        // sM = LM + iSmp * nNodes * 3;
         sKu = Ku + iSmp;
         sM = LM + iSmp;
         sP = P + iSmp;
@@ -231,10 +229,9 @@ __kernel void assemble_K_M_P(const long nNodes, const long nSmp, const double pr
    - u: (nGNodes*3, nSmp)   the displacement of all samples at each dof.
  */
 
-__kernel void assemble_K_P(const long nElms, const long nNodes, const long nSmp,
-                           const double pressure, const __global double *pVals,
-                           const __global double *nodes, const __global long *elmNodeIds,
-                           const __global double *elmThicknessE,
+__kernel void assemble_K_P(const long nElms, const long nSmp, const double pressure,
+                           const __global double *pVals, const __global double *nodes,
+                           const __global long *elmNodeIds, const __global double *elmThicknessE,
                            const __global double *u, __global double *Ku, __global double *P)
 {
     for (uint iElm = get_group_id(0); iElm < nElms; iElm += get_num_groups(0))
@@ -432,158 +429,19 @@ __kernel void calc_u(const long nSmp, const long ndof, const double dt, const do
 }
 
 
-/* Calculate stress when result need to be written to files.
-   Note: no meshColoring needed for this part.
-   - nodes: (nGNodes, 3)    the global coords of all the nodes.
-   - elmNodeIds: (nElm, 3)  the node ids' of each element.
-   - u: (nGNodes*3, nSmp)   the displacement of all samples at each dof.
-   - stress: (nElm, nSmp, 5)
+/* Calculate u of next time step, add on the appTrac
+   - each group loop through columns (nSmp)
  */
 
-__kernel void calc_stress(const long nElms, const long nNodes, const long nSmp,
-                          const __global double *pVals, const __global double *nodes,
-                          const __global long *elmNodeIds, const __global long *elmIds,
-                          const __global double *elmE, const __global double *up,
-                          const __global double *u, __global double *stress)
+__kernel void calc_u_appTrac(const long nSmp, const long ndof, const double dt,
+                             const __global double *LHS, const __global double *appTrac,
+                             __global double *ures)
 {
-    for (uint iElm = get_group_id(0); iElm < nElms; iElm += get_num_groups(0))
+    for (uint i = get_group_id(0); i < ndof; i += get_num_groups(0))
     {
-        const __global long *nodeIds = elmNodeIds + iElm * 3;
-
-        const double density = pVals[0];
-        // pE[0]: v
-        // pE[1]: 0.5*(1-v)
-        // pE[2]: 0.5*k*(1-v)
-        // pE[3]: (1-v^2)
-        const __global double *pE = pVals + 1;
-
-        double sNodes[9];
-        double T[9];
-        double lNodes[6];
-        double lB[6];
-        double lu[9];
-        double lS[9];
-        double gS[9];
-        // tmp vars
-        double tmpVec[3];
-        double tmpBu[5];
-        double tmpMat[9];
-
-        double area = 0.0;
-        // tmp vars
-        double tmpVal = 0.0;
-        double tmpNorm = 0.0;
-
-        for (uint iSmp = get_local_id(0); iSmp < nSmp; iSmp += get_local_size(0))
+        for (uint j = get_local_id(0); j < nSmp; j += get_local_size(0))
         {
-            const __global double *sup = up + iSmp;
-            const __global double *su = u + iSmp;
-            __global double *sStress = stress + elmIds[iElm]*nSmp*5 + iSmp*5;
-
-            // Get the updated coordinates.
-            // node 0
-            sNodes[0] = nodes[nodeIds[0]*3] + sup[(nodeIds[0]*3)*nSmp];
-            sNodes[1] = nodes[nodeIds[0]*3+1] + sup[(nodeIds[0]*3+1)*nSmp];
-            sNodes[2] = nodes[nodeIds[0]*3+2] + sup[(nodeIds[0]*3+2)*nSmp];
-            // node 1
-            sNodes[3] = nodes[nodeIds[1]*3] + sup[(nodeIds[1]*3)*nSmp];
-            sNodes[4] = nodes[nodeIds[1]*3+1] + sup[(nodeIds[1]*3+1)*nSmp];
-            sNodes[5] = nodes[nodeIds[1]*3+2] + sup[(nodeIds[1]*3+2)*nSmp];
-            // node 2
-            sNodes[6] = nodes[nodeIds[2]*3] + sup[(nodeIds[2]*3)*nSmp];
-            sNodes[7] = nodes[nodeIds[2]*3+1] + sup[(nodeIds[2]*3+1)*nSmp];
-            sNodes[8] = nodes[nodeIds[2]*3+2] + sup[(nodeIds[2]*3+2)*nSmp];
-
-            // Transform coordernates to referenced coord.
-            // 1. Get coordinate transformation matrix T.
-            // T : x 0 1 2
-            //     y 3 4 5
-            //     z 6 7 8
-            // x
-            tmpVec[0] = sNodes[6] - sNodes[3];
-            tmpVec[1] = sNodes[7] - sNodes[4];
-            tmpVec[2] = sNodes[8] - sNodes[5];
-            tmpNorm = sqrt(pow(tmpVec[0],2) + pow(tmpVec[1],2) + pow(tmpVec[2],2));
-            T[0] = tmpVec[0] / tmpNorm;
-            T[1] = tmpVec[1] / tmpNorm;
-            T[2] = tmpVec[2] / tmpNorm;
-            // y
-            tmpVec[0] = sNodes[0] - sNodes[6];
-            tmpVec[1] = sNodes[1] - sNodes[7];
-            tmpVec[2] = sNodes[2] - sNodes[8];
-            tmpVal = T[0]*tmpVec[0] + T[1]*tmpVec[1] + T[2]*tmpVec[2];
-            tmpVec[0] -= tmpVal*T[0];
-            tmpVec[1] -= tmpVal*T[1];
-            tmpVec[2] -= tmpVal*T[2];
-            tmpNorm = sqrt(pow(tmpVec[0],2) + pow(tmpVec[1],2) + pow(tmpVec[2],2));
-            T[3] = tmpVec[0] / tmpNorm;
-            T[4] = tmpVec[1] / tmpNorm;
-            T[5] = tmpVec[2] / tmpNorm;
-            // z, the cross product of x and y
-            T[6] = T[1]*T[5] - T[2]*T[4];
-            T[7] = T[2]*T[3] - T[0]*T[5];
-            T[8] = T[0]*T[4] - T[1]*T[3];
-
-            // 2. Transform triangle in 3D to local 2D coord.
-            // node 0 : 0 1     0 1
-            // node 1 : 0 1     2 3
-            // node 2 : 0 1     4 5
-            lNodes[0] = sNodes[0]*T[0] + sNodes[1]*T[1] + sNodes[2]*T[2];
-            lNodes[1] = sNodes[0]*T[3] + sNodes[1]*T[4] + sNodes[2]*T[5];
-            lNodes[2] = sNodes[3]*T[0] + sNodes[4]*T[1] + sNodes[5]*T[2];
-            lNodes[3] = sNodes[3]*T[3] + sNodes[4]*T[4] + sNodes[5]*T[5];
-            lNodes[4] = sNodes[6]*T[0] + sNodes[7]*T[1] + sNodes[8]*T[2];
-            lNodes[5] = sNodes[6]*T[3] + sNodes[7]*T[4] + sNodes[8]*T[5];
-
-            // 3. Calculate area by     |x1  y1  1|     lNodes[0] lNodes[1] 1
-            //                      0.5*|x2  y2  1|     lNodes[2] lNodes[3] 1
-            //                          |x3  y3  1|     lNodes[4] lNodes[5] 1
-            area = 0.5*(lNodes[0]*(lNodes[3]-lNodes[5]) - lNodes[2]*(lNodes[1]-lNodes[5]) + lNodes[4]*(lNodes[1]-lNodes[3]));
-
-            // 4. Compute local B (strain matrix).
-            lB[0] = lNodes[3] - lNodes[5]; // y23: y2 - y3
-            lB[1] = lNodes[4] - lNodes[2]; // x32: x3 - x2
-            lB[2] = lNodes[5] - lNodes[1]; // y31: y3 - y1
-            lB[3] = lNodes[0] - lNodes[4]; // x13: x1 - x3
-            lB[4] = lNodes[1] - lNodes[3]; // y12: y1 - y2
-            lB[5] = lNodes[2] - lNodes[0]; // x21: x2 - x1
-
-            // 5. Transform global displacement (u) to local coordinates.
-            for (uint i = 0; i < 3; ++i)
-            {
-                for (uint j = 0; j < 3; ++j)
-                {
-                    lu[i*3+j] = T[j*3]*su[(nodeIds[i]*3)*nSmp] \
-                                + T[j*3+1]*su[(nodeIds[i]*3+1)*nSmp] \
-                                + T[j*3+2]*su[(nodeIds[i]*3+2)*nSmp];
-                }
-            }
-
-            // 6. Stress = D*Strain = D*Bu
-            //  - Calc Bu
-            tmpBu[0] = lB[0]*lu[0] + lB[2]*lu[3] + lB[4]*lu[6];
-            tmpBu[1] = lB[1]*lu[1] + lB[3]*lu[4] + lB[5]*lu[7];
-            tmpBu[2] = lB[1]*lu[0] + lB[0]*lu[1] + lB[3]*lu[3] + lB[2]*lu[4] + lB[5]*lu[6] + lB[4]*lu[7];
-            tmpBu[3] = lB[0]*lu[2] + lB[2]*lu[5] + lB[4]*lu[8];
-            tmpBu[4] = lB[1]*lu[2] + lB[3]*lu[5] + lB[5]*lu[8];
-            //  - Calc D*Bu
-            tmpVal = elmE[iElm*nSmp+iSmp]/(2.0*area*pE[3]);
-            lS[0] = (tmpBu[0] + pE[0]*tmpBu[1])*tmpVal; // [0,0]: 0 xx
-            lS[4] = (pE[0]*tmpBu[0] + tmpBu[1])*tmpVal; // [1,1]: 1 yy
-            lS[1] = lS[3] = (pE[1]*tmpBu[2])*tmpVal; // [0,1], [1,0]: 2 xy
-            lS[2] = lS[6] = (pE[2]*tmpBu[3])*tmpVal; // [0,2], [2,0]: 3 xz
-            lS[5] = lS[7] = (pE[2]*tmpBu[4])*tmpVal; // [1,2], [2,1]: 4 yz
-            lS[8] = 0.0; // [2,2]: zz
-
-            // 7. Transform back to global coordinates.
-            TtKT(T, lS, tmpMat, gS);
-
-            // 8. Assign back to stress.
-            sStress[0] = gS[0]; // xx
-            sStress[1] = gS[4]; // yy
-            sStress[2] = gS[1]; // xy
-            sStress[3] = gS[2]; // xz
-            sStress[4] = gS[5]; // yz
+            ures[i*nSmp+j] += dt*dt*appTrac[i] / LHS[i*nSmp+j];
         }
     }
 }

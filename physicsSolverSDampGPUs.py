@@ -67,30 +67,41 @@ class GPUSolidSolver(PhysicsSolver):
                 self.etrac = np.load('{}{}.npy'.format(self.stressFilename, self.nt+1))
         else:
             self.etrac = np.zeros((mesh.nNodes, 3))
+            # self.etrac = np.zeros((mesh.ndof, 1))
         
-        self.appTrac = np.zeros((mesh.nNodes, 3))
+        # self.appTrac = np.zeros((mesh.nNodes, 3))
+        # # self.appTrac = np.zeros((mesh.ndof, 1))
         self.pressure = 0.0
 
         # Initialize the number of samples.
         self.nSmp = config.nSmp
         self.ndof = mesh.ndof
-        self.nElms = mesh.nElements
         self.nNodes = mesh.nNodes
+        
+        self.nElms = mesh.nElements
+        self.lclNNodes = mesh.lclNNodes
+        self.lclNodeIds = mesh.lclNodeIds
+        self.lclElmNodeIds = mesh.lclElmNodeIds
+        self.lclNDof = self.lclNNodes * mesh.dof # 3
+
+        self.lclNCommNodes = mesh.lclNCommNodes
+        self.lclNCommDof = self.lclNCommNodes * mesh.dof
+        self.lclBoundary = mesh.lclBoundary
 
         # Damp coef.
         self.damp = mesh.damp
 
         # Prepare the mesh info for union.
-        self.nodeIds = np.unique(mesh.elementNodeIds.ravel())
-        self.dofs = np.array([[3*node, 3*node+1, 3*node+2] for node in self.nodeIds]).astype(int).ravel()
+        self.dofs = np.array([[3*node, 3*node+1, 3*node+2] for node in self.lclNodeIds]).astype(int).ravel()
 
         # Initialize the context.
-        self.du = mesh.iniDu # velocity
-        self.u = mesh.iniU # displacement
+        self.du = mesh.iniDu[self.dofs] # velocity
+        self.u = mesh.iniU[self.dofs] # displacement
 
         # Calculate u_{-1} to start of the time looping.
         # u_-1 = u_0 - dt*du_0 + 0.5*dt**2*ddu_0
         self.InitializeSolver()
+
 
     def InitializeGPU(self):
 
@@ -118,34 +129,36 @@ class GPUSolidSolver(PhysicsSolver):
 
         return 0
 
+
     def InitializeSync(self):
 
-        self.bdyDofs = np.array([[3*node, 3*node+1, 3*node+2] for node in self.mesh.boundary]).astype(int).ravel()
+        self.bdyDofs = np.array([[3*node, 3*node+1, 3*node+2] for node in self.mesh.lclBoundary]).astype(int).ravel()
 
         if self.size > 1:
             self.totalCommDofs = np.array([[i*3, i*3+1, i*3+2] for i in self.mesh.totalCommNodeIds]).astype(int).ravel()
             self.commDofs = np.array([[i*3, i*3+1, i*3+2] for i in self.mesh.commNodeIds]).astype(int).ravel()
+
 
     def InitializeSolver(self):
         """ Calculate u_{-1} to start of the time looping.
             u_-1 = u_0 - dt*du_0 + 0.5*dt**2*ddu_0
         """
         # Allocate the np.array object in CPU.
-        self.LM = np.zeros((self.ndof, self.nSmp)) # no synchronized
-        self.LHS = np.zeros((self.ndof, self.nSmp)) # synchronized
+        self.LM = np.zeros((self.lclNDof, self.nSmp)) # no synchronized
+        self.LHS = np.zeros((self.lclNDof, self.nSmp)) # synchronized
 
 
         # Allocate the OpenCL source and result buffer memory objects on GPU device GMEM.
         mem_flags = cl.mem_flags
 
-        self.nodes_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.nodes)
+        self.nodes_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.nodes[self.lclNodeIds])
         # self.elmNodeIds_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.elementNodeIds)
         # mesh coloring's color tags
-        self.colorGps_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.elementNodeIds[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
+        self.colorGps_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.lclElmNodeIds[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
         self.colorGps_elmIds_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.colorGroups[i]) for i in range(len(self.mesh.colorGroups))]
 
         # for calculating M (mass) matrix, do not need to always exist in GPU memory
-        thickness_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.vthickness)
+        thickness_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.vthickness[self.lclNodeIds])
 
         # for calculating K (stiffness) matrix, thicknessE (nElms, nSmp)
         # -- Young's Modulus
@@ -179,13 +192,14 @@ class GPUSolidSolver(PhysicsSolver):
         # cl.enqueue_fill_buffer(self.queue, self.Ku_buf, np.float64(0.0), 0, self.LM.nbytes)
         # cl.enqueue_fill_buffer(self.queue, self.P_buf, np.float64(0.0), 0, self.LM.nbytes)
 
-        # map_flags = cl.map_flags
-        # self.appTrac_buf = cl.Buffer(self.context, mem_flags.READ_ONLY, int(self.nNodes*24))
-        # self.pinned_appTrac = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.nNodes*24))
-        # self.appTrac, _eventAppTrac = cl.enqueue_map_buffer(self.queue, self.pinned_appTrac, map_flags.WRITE, 0,
-        #                                                     (self.nNodes, 3), self.LM.dtype)
-        # self.appTrac[:,:] = self.iniAppTrac
+        map_flags = cl.map_flags
+        self.appTrac_buf = cl.Buffer(self.context, mem_flags.READ_ONLY, int(self.lclNNodes*24))
+        self.pinned_appTrac = cl.Buffer(self.context, mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, int(self.lclNNodes*24))
+        self.appTrac, _eventAppTrac = cl.enqueue_map_buffer(self.queue, self.pinned_appTrac, map_flags.WRITE, 0,
+                                                            (self.lclNNodes, 3), self.LM.dtype)
+        self.appTrac[:,:] = 0.0
         # prep_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
+
 
         # 'Assemble' the inital M (mass) and Ku (stiffness) 'matrices'.
         # Kernel.
@@ -193,7 +207,7 @@ class GPUSolidSolver(PhysicsSolver):
         for iColorGroup in range(len(self.colorGps_buf)):
             initial_assemble_event = \
             self.program.assemble_K_M_P(self.queue, (len(self.mesh.colorGroups[iColorGroup]),), (1,),
-                                        np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.pressure),
+                                        np.int64(self.nSmp), np.float64(self.pressure),
                                         self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGroup], thickness_buf,
                                         self.elmTE_buf[iColorGroup], u_buf, self.Ku_buf, self.LM_buf, self.P_buf,
                                         wait_for=initial_assemble_events)
@@ -210,17 +224,17 @@ class GPUSolidSolver(PhysicsSolver):
         self.LHS[:,:] = self.LM
         # Synchronize.
         self.SyncCommNodes(self.LHS)
-        self.UnionLHS()
         # Copy into GPU device and prepared.
         self.LHS_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.LHS)
 
 
         # Calculate accelaration u''.
         # ddu = (F0 - C*du - Ku)/M
-        self.ddu = np.zeros((self.ndof, self.nSmp))
+        self.ddu = np.zeros((self.lclNDof, self.nSmp))
         self.ddu_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, self.LM.nbytes)
         initial_calc_ddu_event = \
-        self.program.calc_ddu(self.queue, (self.globalWorkSize,), (self.localWorkSize,), np.int64(self.nSmp), np.int64(self.ndof),
+        self.program.calc_ddu(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
+                              np.int64(self.nSmp), np.int64(self.lclNDof),
                               self.P_buf, self.Ku_buf, self.LHS_buf, self.ddu_buf)
         initial_ddu_copy_event = \
         cl.enqueue_copy(self.queue, self.ddu, self.ddu_buf, wait_for=[initial_calc_ddu_event])
@@ -228,7 +242,7 @@ class GPUSolidSolver(PhysicsSolver):
         # Synchronize the acceleration on common nodes.
         self.SyncCommNodes(self.ddu)
         # Add on the global force.
-        self.ddu += self.appTrac.reshape(self.ndof, 1) / self.LHS
+        self.ddu += self.appTrac.reshape(self.lclNDof, 1) / self.LHS
 
 
         # Prepare the memories.
@@ -259,6 +273,7 @@ class GPUSolidSolver(PhysicsSolver):
         self.srcUP[:,:] = self.srcU - self.dt * self.du[np.newaxis].transpose() + self.dt**2 * self.ddu / 2.0
         # copy up first to device
         prep_up_event = cl.enqueue_copy(self.queue, self.up_buf, self.srcUP)
+        prep_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
 
 
     def RefreshContext(self, physicSolver):
@@ -294,7 +309,8 @@ class GPUSolidSolver(PhysicsSolver):
 
 
             # Only use values of the dofs contained in the partition.
-            self.appTrac[self.nodeIds,:] = appTrac[self.nodeIds]
+            self.appTrac[:,:] = appTrac[self.lclNodeIds,:]
+            self.appTrac[self.lclBoundary,:] = 0.0
 
         # Set up the pressure.
         if t > self.constant_T:
@@ -307,42 +323,80 @@ class GPUSolidSolver(PhysicsSolver):
 
     def Solve(self, t, dt):
 
+        # start = timer()
+
         cl.enqueue_fill_buffer(self.queue, self.Ku_buf, np.float64(0.0), 0, self.LM.nbytes)
         cl.enqueue_fill_buffer(self.queue, self.P_buf, np.float64(0.0), 0, self.LM.nbytes)
 
-        update_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
-        # update_appTrac_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
+        # end = timer()
+        # print('--- Rank: {} time 0: {:10.1f} ms'.format(self.rank, (end - start) * 1000.0))
+        # start = timer()
 
-        calc_Ku_events = [update_u_event]
+        calc_Ku_events = []
         for iColorGrp in range(len(self.colorGps_buf)):
             calc_Ku_event = \
             self.program.assemble_K_P(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
                                       np.int64(len(self.mesh.colorGroups[iColorGrp])),
-                                      np.int64(self.nNodes), np.int64(self.nSmp), np.float64(self.pressure),
+                                      np.int64(self.nSmp), np.float64(self.pressure),
                                       self.pVals_buf, self.nodes_buf, self.colorGps_buf[iColorGrp],
                                       self.elmTE_buf[iColorGrp], self.u_buf, self.Ku_buf, self.P_buf,
                                       wait_for=calc_Ku_events)
             calc_Ku_events = [calc_Ku_event]
 
+        # end = timer()
+        # print('--- Rank: {} time 1: {:10.1f} ms'.format(self.rank, (end - start) * 1000.0))
+        # start = timer()
+
         calc_u_event = \
         self.program.calc_u(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
-                            np.int64(self.nSmp), np.int64(self.ndof), np.float64(dt), np.float64(self.damp),
+                            np.int64(self.nSmp), np.int64(self.lclNDof),
+                            np.float64(dt), np.float64(self.damp),
                             self.P_buf, self.Ku_buf, self.LM_buf, self.LHS_buf,
                             self.u_buf, self.up_buf, self.ures_buf, wait_for=[calc_Ku_event])
+        # calc_u_event.wait() # TODO:: Comment off after debugging
 
-        ures_copy_event = cl.enqueue_copy(self.queue, self.srcURes, self.ures_buf, wait_for=[calc_u_event])
-        ures_copy_event.wait()
+        # end = timer()
+        # print('--- Rank: {} time 2: {:10.1f} ms'.format(self.rank, (end - start) * 1000.0))
+        # start = timer()
+
+        ures_copy_event = cl.enqueue_copy(self.queue, self.srcURes[:self.lclNCommDof], self.ures_buf,
+                                          wait_for=[calc_u_event])
+        # ures_copy_event.wait()
+
+        # end = timer()
+        # print('--- Rank: {} time 3: {:10.1f} ms'.format(self.rank, (end - start) * 1000.0))
+        # start = timer()
 
         # Synchronize the ures.
         self.SyncCommNodes(self.srcURes)
-        # Add on the global force.
-        self.srcURes[:,:] += dt*dt*self.appTrac.reshape(self.ndof, 1) / self.LHS
+
+        # end = timer()
+        # print('--- Rank: {} time 4: {:10.1f} ms'.format(self.rank, (end - start) * 1000.0))
+        # start = timer()
+
         # Apply boundary condition.
         self.ApplyBoundaryCondition(self.srcURes)
+
+        update_u_event = cl.enqueue_copy(self.queue, self.ures_buf, self.srcURes[:self.lclNCommDof])
+
+        # Add on the global force.
+        appTrac_copy_event = cl.enqueue_copy(self.queue, self.appTrac_buf, self.appTrac)
+        calc_u_event = \
+        self.program.calc_u_appTrac(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
+                            np.int64(self.nSmp), np.int64(self.lclNDof), np.float64(dt),
+                            self.LHS_buf, self.appTrac_buf, self.ures_buf,
+                            wait_for=[update_u_event, appTrac_copy_event])
+        calc_u_event.wait()
+
+
+        # end = timer()
+        # print('--- Rank: {} time 5: {:10.1f} ms'.format(self.rank, (end - start) * 1000.0))
+        # start = timer()
 
         # Update/Shift the pointers.
         self.srcURes, self.srcU, self.srcUP = self.srcUP, self.srcURes, self.srcU
         self.ures_buf, self.u_buf, self.up_buf = self.up_buf, self.ures_buf, self.u_buf
+
 
     def ApplyBoundaryCondition(self, quant): # TODO:: Change to according to configuration.
         quant[self.bdyDofs,:] = self.mesh.bdyU
@@ -357,7 +411,7 @@ class GPUSolidSolver(PhysicsSolver):
 
         totalCommDofs = self.totalCommDofs
         commDofs = self.commDofs
-        commQuant = quant[commDofs]
+        commQuant = quant[:len(commDofs)]
 
         totalQuant = np.zeros((len(totalCommDofs), self.nSmp))
         if self.rank == 0:
@@ -384,84 +438,36 @@ class GPUSolidSolver(PhysicsSolver):
         else:
 
             self.comm.Send(commDofs, 0, TAG_COMM_DOF)
-            self.comm.Send(commQuant.flatten(), 0, TAG_COMM_DOF_VALUE)
+            self.comm.Send(commQuant.ravel(), 0, TAG_COMM_DOF_VALUE)
 
 
         # Get the collected total quantities by broadcast.
         self.comm.Bcast(totalQuant, root=0)
         # Update the original quantity.
         indices = np.where(np.isin(totalCommDofs, commDofs))[0]
-        quant[commDofs] = totalQuant[indices]
-
-    def UnionLHS(self):
-
-        if self.size == 1:
-            return
-
-        if self.rank == 0:
-
-            lhsBuf = np.zeros((self.ndof, self.nSmp))
-            for i in range(1, self.size):
-                self.comm.Recv(lhsBuf, MPI.ANY_SOURCE, TAG_LHS)
-                # Flag the nodes uBuf acctually contains.
-                self.LHS[lhsBuf!=0] = lhsBuf[lhsBuf!=0]
-
-        else:
-            self.comm.Send(self.LHS, 0, TAG_LHS)
-
-        self.comm.Bcast(self.LHS, root=0)
+        quant[:len(commDofs)] = totalQuant[indices]
 
 
-    # def SaveDisplacement(self, filename, counter):
     def Save(self, filename, counter):
         # Prepare/Union the displacement.
-        self.UnionDisplacement(self.srcU)
-        self.UnionDisplacement(self.srcUP)
+        resU = self.UnionDisplacement(self.srcU)
 
         if self.rank == 0:
             self.mesh.SaveDisplacement(filename, counter,
-                                       self.srcU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof),
-                                       self.srcUP.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof))
+                                       resU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof))
         # Barrier everyone!
         self.comm.Barrier()
 
-    # def Save(self, filename, counter):
-    #     # Prepare/Union the displacement.
-    #     self.UnionDisplacement(self.srcU)
-
-    #     # Prepare stress.
-    #     update_u_event = cl.enqueue_copy(self.queue, self.u_buf, self.srcU)
-
-    #     calc_stress_events = []
-    #     for iColorGrp in range(len(self.colorGps_buf)):
-    #         calc_s_event = \
-    #         self.program.calc_stress(self.queue, (self.globalWorkSize,), (self.localWorkSize,),
-    #                                   np.int64(len(self.mesh.colorGroups[iColorGrp])),
-    #                                   np.int64(self.nNodes), np.int64(self.nSmp),
-    #                                   self.pVals_buf, self.nodes_buf,
-    #                                   self.colorGps_buf[iColorGrp], self.colorGps_elmIds_buf[iColorGrp],
-    #                                   self.elmE_buf[iColorGrp], self.up_buf, self.u_buf, self.stress_buf,
-    #                                   wait_for=[update_u_event])
-    #         calc_stress_events.append(calc_s_event)
-
-    #     stress_copy_event = cl.enqueue_copy(self.queue, self.stress, self.stress_buf, wait_for=calc_stress_events)
-    #     stress_copy_event.wait()
-
-    #     self.UnionStress()
-
-    #     if self.rank == 0:
-    #         self.mesh.Save(filename, counter,
-    #                        self.srcU.transpose().reshape(self.nSmp, self.mesh.nNodes, self.Dof),
-    #                        self.glbStresses)
-    #     # Barrier everyone!
-    #     self.comm.Barrier()
 
     def UnionDisplacement(self, quant):
 
         if self.size == 1:
-            return
+            return quant
 
         if self.rank == 0:
+
+            resU = np.empty((self.ndof, self.nSmp))
+            resU[self.dofs,:] = quant
 
             nodesInfo = MPI.Status()
             dofBuf = np.empty(self.ndof, dtype=np.int64)
@@ -471,37 +477,14 @@ class GPUSolidSolver(PhysicsSolver):
                 self.comm.Recv(dofBuf, i, TAG_NODE_ID, nodesInfo) # MPI.ANY_SOURCE
                 nodesSource = nodesInfo.Get_source()
                 dofs = dofBuf[:nodesInfo.Get_count(MPI.INT64_T)]
-                self.comm.Recv(uBuf, nodesSource, TAG_DISPLACEMENT)
+                self.comm.Recv(uBuf, nodesSource, TAG_DISPLACEMENT, nodesInfo)
                 # Flag the nodes uBuf acctually contains.
-                quant[dofs,:] = uBuf[dofs]
+                resU[dofs,:] = uBuf[:len(dofs)*self.nSmp].reshape(len(dofs), self.nSmp)
 
         else:
             self.comm.Send(self.dofs, 0, TAG_NODE_ID)
             self.comm.Send(quant, 0, TAG_DISPLACEMENT)
+            resU = None
 
+        return resU
 
-    def UnionStress(self):
-
-        if self.size == 1:
-            self.glbStresses = self.stress
-            return
-
-        if self.rank == 0:
-
-            self.glbStresses = np.zeros((self.mesh.gnElements, self.nSmp, 5))
-            self.glbStresses[self.mesh.partition==0, :, :] = self.stress
-
-            bufSize = int(self.mesh.gnElements / self.size * 1.2)
-            stressesBuf = np.empty((bufSize, self.nSmp, 5))
-
-            recvInfo = MPI.Status()
-            for i in range(1, self.size):
-                # Receive the stresses from each processor.
-                self.comm.Recv(stressesBuf, i, TAG_STRESSES, recvInfo) # MPI.ANY_SOURCE
-                recvLen = recvInfo.Get_count(MPI.DOUBLE)
-                # p = recvInfo.Get_source()
-                # Assign.
-                self.glbStresses[self.mesh.partition==i, :, :] = stressesBuf[:int(recvLen/self.nSmp/5), :, :]
-        else:
-
-            self.comm.Send(self.stress, 0, TAG_STRESSES)

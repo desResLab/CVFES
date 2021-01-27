@@ -12,12 +12,41 @@ TAG_ELM         = 113
 TAG_ELMID       = 114
 
 
+def CalcLocalInfo(size, mesh):
+    """ Calculate local node Ids from the partitioning result. """
+
+    # Common node ids' local id.
+    mesh.lclNCommNodes = len(mesh.commNodeIds)
+
+    # Local node ids contained in each partation.
+    lclNodeIds = np.sort(np.unique(mesh.elementNodeIds.ravel()))
+
+    mesh.lclNNodes = len(lclNodeIds)
+    mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
+    mesh.lclNodeIds[:mesh.lclNCommNodes] = mesh.commNodeIds
+    mesh.lclNodeIds[mesh.lclNCommNodes:] = lclNodeIds[~np.in1d(lclNodeIds, mesh.commNodeIds)]
+
+    # Elemental local node ids.
+    sorter = np.argsort(mesh.lclNodeIds)
+    mesh.lclElmNodeIds = sorter[np.searchsorted(mesh.lclNodeIds, mesh.elementNodeIds, sorter=sorter)]
+
+    # Mesh boundary local ids.
+    mesh.lclBoundary = np.where(np.in1d(mesh.lclNodeIds, mesh.boundary))[0]
+
+
 def MeshPartition(name, comm, mesh):
     """ Distribute the meshes between processors using ParMETIS lib. """
 
     size = comm.Get_size()
     rank = comm.Get_rank()
+    
     if size == 1:
+        # Assign global info to local directly.
+        mesh.lclNCommNodes = 0
+        mesh.lclNNodes = mesh.nNodes
+        mesh.lclNodeIds = np.arange(mesh.nNodes, dtype=int)
+        mesh.lclElmNodeIds = mesh.elementNodeIds
+        mesh.lclBoundary = mesh.boundary
         return 0
 
 
@@ -32,6 +61,8 @@ def MeshPartition(name, comm, mesh):
         mesh.totalCommNodeIds = data['totalCommNodeIds']
         mesh.commNodeIds = data['commNodeIds']
         mesh.partition = data['partition']
+
+        CalcLocalInfo(size, mesh)
 
         return 0
 
@@ -198,6 +229,7 @@ def MeshPartition(name, comm, mesh):
     mesh.totalCommNodeIds = commonNodes
     mesh.commNodeIds = np.intersect1d(commonNodes, myNodes)
 
+    CalcLocalInfo(size, mesh)
 
     # Save the partition results into local files and read from files if existing.
     np.savez(name, nElms=mesh.nElements, elms=mesh.elements,

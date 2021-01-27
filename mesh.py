@@ -387,7 +387,23 @@ class FluidMesh(Mesh):
 
         print('Write result to {}.'.format(stressFilename))
 
-    def DebugSave(self, filename, vals, uname=['debug'], pointData=[True]):
+    # def DebugSave(self, filename, vals, uname=['debug'], pointData=[True]):
+    #     for i, val in enumerate(vals):
+    #         uTuples = numpy_to_vtk(val)
+    #         uTuples.SetName(uname[i])
+    #         if pointData[i]:
+    #             self.polyDataModel.GetPointData().AddArray(uTuples)
+    #         else:
+    #             self.polyDataModel.GetCellData().AddArray(uTuples)
+
+    #     writer = vtk.vtkXMLUnstructuredGridWriter() # if fileExtension.endswith('vtp') else vtk.vtkXMLUnstructuredGridWriter()
+    #     writer.SetInputData(self.polyDataModel)
+    #     writer.SetFileName(filename)
+    #     writer.Write()
+
+    #     print('Write result to {}.'.format(filename))
+
+    def DebugSave(self, filename, counter, vals, uname=['debug'], pointData=[True]):
         for i, val in enumerate(vals):
             uTuples = numpy_to_vtk(val)
             uTuples.SetName(uname[i])
@@ -396,12 +412,15 @@ class FluidMesh(Mesh):
             else:
                 self.polyDataModel.GetCellData().AddArray(uTuples)
 
+        filename, fileExtension = os.path.splitext(filename)
+        stressFilename = '{}{}{}'.format(filename, counter, fileExtension)
+
         writer = vtk.vtkXMLUnstructuredGridWriter() # if fileExtension.endswith('vtp') else vtk.vtkXMLUnstructuredGridWriter()
         writer.SetInputData(self.polyDataModel)
-        writer.SetFileName(filename)
+        writer.SetFileName(stressFilename)
         writer.Write()
 
-        print('Write result to {}.'.format(filename))
+        print('Write result to {}.'.format(stressFilename))
 
 
 
@@ -523,17 +542,13 @@ class SolidMesh(Mesh):
 
         print('Write result to {}.'.format(stressFilename))
 
-    def SaveDisplacement(self, filename, counter, u, up):
+    def SaveDisplacement(self, filename, counter, u):
         """ Save displacement and previous displacement to files.
             The previous displacement is used to update the coordinates.
         """
         for iSmp in range(self.nSmp):
             uTuples = numpy_to_vtk(u[iSmp,:,:])
             uTuples.SetName('{}_{:03d}'.format('u', iSmp))
-            self.polyDataModel.GetPointData().AddArray(uTuples)
-
-            uTuples = numpy_to_vtk(up[iSmp,:,:])
-            uTuples.SetName('{}_{:03d}'.format('up', iSmp))
             self.polyDataModel.GetPointData().AddArray(uTuples)
 
         filename, fileExtension = os.path.splitext(filename)

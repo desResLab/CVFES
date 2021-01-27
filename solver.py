@@ -101,6 +101,8 @@ class TransientSolver(Solver):
         if self.rank == 0:
             print('Time\tResidual norm\tTime used')
 
+        solverStart = timer()
+
         # Calculate when to save the result into file.
         saveSteps = np.linspace(0, self.nTimeSteps, self.saveResNum+1, dtype=int)
 
@@ -125,7 +127,7 @@ class TransientSolver(Solver):
             
             # Print out debug information, time.
             if self.rank == 0:
-                print('{}\t{:10.1f} ms'.format(self.t[timeStep], (end-start) * 1000.0))
+                print('{:3.5e}\t{:10.1f} ms'.format(self.t[timeStep], (end-start) * 1000.0))
 
             if timeStep+1 in saveSteps:
                 self.fluidSolver.Save(self.saveStressFilename, timeStep+1)
@@ -136,6 +138,10 @@ class TransientSolver(Solver):
             if self.fluidSolver.Steady():
                 print('Fluid reaches steady at time {}s'.format(t))
                 break
+
+        solverEnd = timer()
+        print('Rank: {}\t{:10.1f} ms'.format(self.rank, (solverEnd-solverStart) * 1000.0))
+
 
 
 class TransientSolverGPU(TransientSolver):
