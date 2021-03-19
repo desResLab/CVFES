@@ -278,6 +278,14 @@ class FluidMesh(Mesh):
         # Set the inlet to be appliable inlet glbNodeIds
         self.inlet = np.array([il.appNodes for il in self.faces['inlet']]).ravel()
 
+        for outletFace in self.faces['outlet']:
+            outlet = outletFace.glbNodeIds
+            outletFace.bdyFlags = np.isin(outlet, self.wall)
+            outletFace.appNodes = outlet[~outletFace.bdyFlags]
+        # Set the outlet to be appliable outlet glbNodeIds
+        self.outlet = np.array([ol.appNodes for ol in self.faces['outlet']]).ravel()
+
+
     def setInitialConditions(self, iniCondConfig):
         # Set the acceleration
         self.iniDDu = self.setCondition(iniCondConfig.acceleration, 'acceleration')

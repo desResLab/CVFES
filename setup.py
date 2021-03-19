@@ -25,6 +25,10 @@ ext_modules = [
         "optimizedExplicitVMSAssemble",
         ["optimizedExplicitVMSAssemble.pyx"],
     ),
+    # Extension(
+    #     "optimizedExplicitVMSAssembleNew",
+    #     ["optimizedExplicitVMSAssembleNew.pyx"],
+    # ),
     Extension(
         "bdyStressExport",
         ["bdyStressExport.pyx"],
