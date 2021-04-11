@@ -102,6 +102,9 @@ class ExplicitVMSSolver(PhysicsSolver):
         M_x = lambda x: myPreconditioner.solve(x)
         self.M = LinearOperator((dof*nNodes, dof*nNodes), M_x)
 
+        # Lumped mass
+        self.lumpLHS = np.sum(self.LHS, axis=1)
+
         # --- Attach the initial velocity and pressure together
         self.res = np.empty((nNodes, dof), dtype=float)
         self.res[:,:3] = self.du
@@ -162,9 +165,13 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.sdu = self.nsdu
         self.nsdu = np.zeros_like(self.sdu)
 
-        self.res, exitCode = gmres(self.spLHS, self.RHS-dt*self.R, x0=self.res.ravel(), M=self.M)
-        print('Linear system solver at time step {}, converge {}'.format(t, exitCode))
-        print(np.allclose(self.spLHS.dot(self.res), self.RHS-dt*self.R))
+        # # Solve the linear system to get velocity and pressure
+        # self.res, exitCode = gmres(self.spLHS, self.RHS-dt*self.R, x0=self.res.ravel(), M=self.M)
+        # # print('Linear system solver at time step {}, converge {}'.format(t, exitCode))
+        # # print(np.allclose(self.spLHS.dot(self.res), self.RHS-dt*self.R))
+
+        # Use lumped mass
+        self.res = self.res.ravel() - dt*self.R/self.lumpLHS
 
         self.res = self.res.reshape((nNodes, dof))
         self.du[:,:] = self.res[:,:3]
