@@ -39,8 +39,10 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.du = mesh.iniDu.reshape((self.mesh.nNodes, 3)) # velocity
         self.p = mesh.iniP # pressure
 
-        self.odu = np.zeros_like(self.du)
-        self.op = np.zeros_like(self.p)
+        # self.odu = np.zeros_like(self.du)
+        # self.op = np.zeros_like(self.p)
+        self.odu = np.copy(self.du)
+        self.op = np.copy(self.p)
 
         self.sdu = np.zeros((self.mesh.nElements, 4, 3)) # sub-scale velocity
         self.nsdu = np.zeros_like(self.sdu) # sdu at next time step
@@ -92,9 +94,11 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.DNs = np.empty((nElms, vDof, nElmNodes), dtype=float)
         self.volumes = np.zeros(nElms, dtype=float) # For debugging
         self.LHS = np.zeros((dof*nNodes, dof*nNodes), dtype=float)
+        lMs = np.zeros((nElms, vDof*nElmNodes, vDof*nElmNodes), dtype=float)
+        self.invLMs = np.zeros_like(lMs)
 
         OptimizedExplicitVMSInitialAssemble(nodes, elements, w, lN, lDN,
-                                            self.DNs, self.volumes, self.LHS)
+                                            self.DNs, self.volumes, self.LHS, lMs)
 
         # Sparse matrix
         self.spLHS = csc_matrix(self.LHS)
@@ -104,6 +108,10 @@ class ExplicitVMSSolver(PhysicsSolver):
 
         # Lumped mass
         self.lumpLHS = np.sum(self.LHS, axis=1)
+
+        # Calculate inverse of local mass matrix for subscales calculation
+        for iElm in range(nElms):
+            self.invLMs[iElm,:,:] = np.linalg.inv(lMs[iElm])
 
         # --- Attach the initial velocity and pressure together
         self.res = np.empty((nNodes, dof), dtype=float)
@@ -141,7 +149,7 @@ class ExplicitVMSSolver(PhysicsSolver):
         ASS = 5.0
         self.coefs[4] = (5.0*11.7)**2.0
         # self.coefs[4] = (5.0*11.7*11.7)**2.0
-        print('The invEpsilon = {}'.format(self.coefs[4]))
+        # print('The invEpsilon = {}'.format(self.coefs[4]))
 
         # # Assemble the LHS and RHS.
         # OptimizedExplicitVMSAssemble(nodes, elements,
@@ -153,7 +161,7 @@ class ExplicitVMSSolver(PhysicsSolver):
         # only for debugging
         OptimizedExplicitVMSAssemble(nodes, elements, self.du, self.p, hdu, hp, self.sdu, self.nsdu,
                                      self.f, self.mesh.inscribeDiameters,
-                                     self.w, self.lN, self.DNs, self.volumes, self.coefs,
+                                     self.w, self.lN, self.DNs, self.volumes, self.invLMs, self.coefs,
                                      self.RHS, self.R,
                                      self.mRT1, self.mRT2, self.mRT3, self.mRT4, self.mRT5,
                                      self.pRT1, self.pRT2)
@@ -178,8 +186,8 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.p[:] = self.res[:,-1]
 
         # Apply the Dirichlet boundary conditions.
-        self.ApplyDirichletBCs(t)
-        print('Executing here!')
+        self.ApplyDirichletBCs(t+dt)
+        # print('Executing here!')
 
 
     def ApplyDirichletBCs(self, t):

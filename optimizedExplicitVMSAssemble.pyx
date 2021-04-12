@@ -79,6 +79,40 @@ cdef double getGlbDerivatives(
     return detJ / 6.0
 
 
+# @cython.cdivision(True)
+# @cython.boundscheck(False)
+# @cython.wraparound(False)
+# cdef double inverseM(double[:,::1] lM, double[:,::1] cofLM, double[:,::1] invLM):
+
+#     cdef double detM, iDetM
+
+#     # +0,0  -0,1  +0,2
+#     # -1,0  +1,1  -1,2
+#     # +2,0  -2,1  +2,2
+#     cofLM[0,0] = lM[1,1]*lM[2,2] - lM[1,2]*lM[2,1]
+#     cofLM[0,1] = lM[2,0]*lM[1,2] - lM[1,0]*lM[2,2]
+#     cofLM[0,2] = lM[1,0]*lM[2,1] - lM[1,1]*lM[2,0]
+#     cofLM[1,0] = lM[2,1]*lM[0,2] - lM[0,1]*lM[2,2]
+#     cofLM[1,1] = lM[0,0]*lM[2,2] - lM[2,0]*lM[0,2]
+#     cofLM[1,2] = lM[2,0]*lM[0,1] - lM[0,0]*lM[2,1]
+#     cofLM[2,0] = lM[0,1]*lM[1,2] - lM[1,1]*lM[0,2]
+#     cofLM[2,1] = lM[1,0]*lM[0,2] - lM[0,0]*lM[1,2]
+#     cofLM[2,2] = lM[0,0]*lM[1,1] - lM[1,0]*lM[0,1]
+
+#     detM = lM[0,0]*cofLM[0,0] + lM[0,1]*cofLM[0,1] + lM[0,2]*cofLM[0,2]
+#     iDetM = 1.0 / detM
+
+#     invLM[0,0] = cofLM[0,0] * iDetM
+#     invLM[0,1] = cofLM[1,0] * iDetM
+#     invLM[0,2] = cofLM[2,0] * iDetM
+#     invLM[1,0] = cofLM[0,1] * iDetM
+#     invLM[1,1] = cofLM[1,1] * iDetM
+#     invLM[1,2] = cofLM[2,1] * iDetM
+#     invLM[2,0] = cofLM[0,2] * iDetM
+#     invLM[2,1] = cofLM[1,2] * iDetM
+#     invLM[2,2] = cofLM[2,2] * iDetM
+
+
 
 @cython.cdivision(True)
 @cython.boundscheck(False)
@@ -100,7 +134,7 @@ cdef void initialAssembling(long[::1] eNIds, double[:,::1] lM, double[:,::1] LHS
 @cython.wraparound(False)
 def OptimizedExplicitVMSInitialAssemble(double[:,::1] nodes, long[:,::1] elements,
     double[::1] w, double[:,::1] lN, double[:,::1] lDN,
-    double[:,:,::1] DNs, double[::1] volumes, double[:,::1] LHS):
+    double[:,:,::1] DNs, double[::1] volumes, double[:,::1] LHS, double[:,:,::1] lMs):
 
     cdef long nElm = elements.shape[0]
     cdef long nPts = 4
@@ -151,9 +185,26 @@ def OptimizedExplicitVMSInitialAssemble(double[:,::1] nodes, long[:,::1] element
                     tmpM = lN[iGp,a] * lN[iGp,b] * wGp
                     for k in range(4):
                         lM[4*a+k,4*b+k] += tmpM
+                    for k in range(3):
+                        lMs[iElm,3*a+k,3*b+k] += tmpM
 
         initialAssembling(eNIds, lM, LHS)
 
+
+
+@cython.cdivision(True)
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void matrixVecMltp(double[:,:,::1] invLM, double[:,::1] R, double[:,:,::1] subValue, long iElm):
+
+    cdef int a, i, j
+
+    for a in range(4):
+        for i in range(4):
+            for j in range(3):
+                subValue[iElm,a,0] += invLM[iElm,3*a,3*i+j]*R[i,j]
+                subValue[iElm,a,1] += invLM[iElm,3*a+1,3*i+j]*R[i,j]
+                subValue[iElm,a,2] += invLM[iElm,3*a+2,3*i+j]*R[i,j]
 
 
 @cython.cdivision(True)
@@ -199,7 +250,7 @@ def OptimizedExplicitVMSAssemble(
     double[:,::1] du, double[::1] p, double[:,::1] hdu, double[::1] hp,
     double[:,:,::1] sdu, double[:,:,::1] nsdu, double[:,::1] f, double[::1] hs,
     double[::1] w, double[:,::1] lN, double[:,:,::1] DNs, double[::1] volumes,
-    double[::1] coefs, double[::1] RHS, double[::1] R,
+    double[:,:,::1] invLMs, double[::1] coefs, double[::1] RHS, double[::1] R,
     double[::1] mRT1, double[::1] mRT2, double[::1] mRT3, double[::1] mRT4, double[::1] mRT5,
     double[::1] pRT1, double[::1] pRT2):
 
@@ -454,10 +505,12 @@ def OptimizedExplicitVMSAssemble(
                 lPressureResT2[a] -= wGp*varT2*invEpsilon
 
         # Update the u_subscale for next timestep.
-        for a in range(nPts):
-            nsdu[iElm,a,0] += lNsdu[a,0] / lLHS[a]
-            nsdu[iElm,a,1] += lNsdu[a,1] / lLHS[a]
-            nsdu[iElm,a,2] += lNsdu[a,2] / lLHS[a]
+        # for a in range(nPts):
+        #     nsdu[iElm,a,0] += lNsdu[a,0] / lLHS[a]
+        #     nsdu[iElm,a,1] += lNsdu[a,1] / lLHS[a]
+        #     nsdu[iElm,a,2] += lNsdu[a,2] / lLHS[a]
+
+        matrixVecMltp(invLMs, lNsdu, nsdu, iElm)
 
         # Assembling
         # assembling(eNIds, lRHS, lRes, RHS, R)
