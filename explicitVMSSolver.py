@@ -7,6 +7,7 @@
     Explicit VMS solver for fluid part.
 """
 
+import math
 import numpy as np
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import gmres, LinearOperator, spilu
@@ -34,6 +35,7 @@ class ExplicitVMSSolver(PhysicsSolver):
         PhysicsSolver.__init__(self, comm, mesh, config)
 
         self.Dof = 4 # 3 fo velocity (du) and 1 of pressure
+        self.constant_T = config.constant_T # for ramp
 
         # Initialize the context.
         self.du = mesh.iniDu.reshape((self.mesh.nNodes, 3)) # velocity
@@ -59,7 +61,13 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.InitializeParameters()
         self.InitializeSolver()
         # Initialize the boundary conditions
-        self.ApplyDirichletBCs(0.0)
+        # self.ApplyDirichletBCs(0.0)
+        self.ApplyDirichletBCsWithRamp(0.0)
+
+        # # --- Attach the initial velocity and pressure together
+        # self.res = np.empty((self.mesh.nNodes, dof), dtype=float)
+        # self.res[:,:3] = self.du
+        # self.res[:,-1] = self.p
 
 
     def InitializeParameters(self):
@@ -112,11 +120,6 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Calculate inverse of local mass matrix for subscales calculation
         for iElm in range(nElms):
             self.invLMs[iElm,:,:] = np.linalg.inv(lMs[iElm])
-
-        # --- Attach the initial velocity and pressure together
-        self.res = np.empty((nNodes, dof), dtype=float)
-        self.res[:,:3] = self.du
-        self.res[:,-1] = self.p
 
 
     def Solve(self, t, dt):
@@ -179,14 +182,15 @@ class ExplicitVMSSolver(PhysicsSolver):
         # # print(np.allclose(self.spLHS.dot(self.res), self.RHS-dt*self.R))
 
         # Use lumped mass
-        self.res = self.res.ravel() - dt*self.R/self.lumpLHS
+        self.res = - dt*self.R/self.lumpLHS
 
         self.res = self.res.reshape((nNodes, dof))
-        self.du[:,:] = self.res[:,:3]
-        self.p[:] = self.res[:,-1]
+        self.du[:,:] = self.du + self.res[:,:3]
+        self.p[:] = self.p + self.res[:,-1]
 
         # Apply the Dirichlet boundary conditions.
-        self.ApplyDirichletBCs(t+dt)
+        # self.ApplyDirichletBCs(t+dt)
+        self.ApplyDirichletBCsWithRamp(t+dt)
         # print('Executing here!')
 
 
@@ -196,6 +200,26 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Combine the boundary condition at the start of each time step.
         for inlet in self.mesh.faces['inlet']:
             self.du[inlet.appNodes] = inlet.inletVelocity.reshape((len(inlet.appNodes), 3))
+
+        # dofs = self.GenerateDofs(self.mesh.wall, 3)
+        self.du[self.mesh.wall] = 0.0
+
+        # Only for debugging
+        self.p[self.mesh.outlet] = 0.0
+
+
+    def ApplyDirichletBCsWithRamp(self, t):
+        # Update the inlet velocity first.
+        self.mesh.updateInletVelocity(t)
+        # Combine the boundary condition at the start of each time step.
+        if t > self.constant_T:
+            for inlet in self.mesh.faces['inlet']:
+                self.du[inlet.appNodes] = inlet.inletVelocity.reshape((len(inlet.appNodes), 3))
+        else:
+            for inlet in self.mesh.faces['inlet']:
+                a = b = 0.5 * inlet.inletVelocity.reshape((len(inlet.appNodes), 3))
+                n = math.pi/self.constant_T
+                self.du[inlet.appNodes] = a - b*math.cos(n*t)
 
         # dofs = self.GenerateDofs(self.mesh.wall, 3)
         self.du[self.mesh.wall] = 0.0
