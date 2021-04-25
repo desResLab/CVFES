@@ -279,34 +279,37 @@ def OptimizedExplicitVMSAssemble(
     cdef double h = 0.0
 
     cdef double wGp
-    cdef double max_norm_av, tau_u_inv, tau_t, Ru
-    cdef double tau_p, tau_t_p
     cdef double trGradU, trGradHu
-    cdef double varT1, varT2, varT3
-    cdef double ph, hph, sph, sduhNorm, sh
-
+    cdef double varT1, varT2
+    cdef double ph, hph
+    
     cdef long[::1] eNIds = np.empty(nPts, dtype=long)
+
     cdef double[:,::1] av = np.zeros((nPts, ndim), dtype=np.float)
-    cdef double[:,::1] atau = np.zeros((nPts, ndim), dtype=np.float)
-    cdef double[::1] norm_atau = np.zeros(nPts, dtype=np.float)
     cdef double[::1] ah = np.zeros(ndim, dtype=np.float)
     cdef double[::1] duh = np.zeros(ndim, dtype=np.float)
-    cdef double[::1] subgridF = np.zeros(ndim, dtype=np.float)
-    cdef double[:,::1] gradU = np.empty((ndim, ndim), dtype=np.float)
-    cdef double[::1] gradP = np.empty(ndim, dtype=np.float)
     cdef double[::1] sduh = np.empty(ndim, dtype=np.float)
     cdef double[::1] fh = np.empty(ndim, dtype=np.float)
+
+    cdef double[:,::1] gradU = np.empty((ndim, ndim), dtype=np.float)
+    cdef double[::1] gradP = np.empty(ndim, dtype=np.float)
     cdef double[:,::1] gradHu = np.empty((ndim, ndim), dtype=np.float)
     # cdef double[:,::1] symGradHu = np.empty((ndim, ndim), dtype=np.float)
     cdef double[::1] gradHp = np.empty(ndim, dtype=np.float)
+
     cdef double[::1] ahGradHu = np.empty(ndim, dtype=np.float)
-    cdef double[::1] gradHuSduh = np.empty(ndim, dtype=np.float)
     cdef double[::1] T1 = np.empty(ndim, dtype=np.float)
-    cdef double[::1] lLHS = np.empty(nPts, dtype=np.float)
+
     cdef double[:,::1] lRHS = np.empty((nPts, 4), dtype=np.float)
     cdef double[:,::1] lRes = np.empty((nPts, 4), dtype=np.float)
-    cdef double[:,::1] lNsdu = np.zeros((nPts, 3), dtype=np.float)
     
+    cdef double max_norm_av, tau_u_inv, tau_t, Ru
+    cdef double[:,::1] atau = np.zeros((nPts, ndim), dtype=np.float)
+    cdef double[::1] norm_atau = np.zeros(nPts, dtype=np.float)
+    cdef double[::1] avGradU = np.empty(ndim, dtype=np.float)
+    cdef double[::1] subgridF = np.zeros(ndim, dtype=np.float)
+    cdef double[:,::1] lNsdu = np.zeros((nPts, 3), dtype=np.float)
+
     # for debugging only
     cdef double[:,::1] lMomentumResT1 = np.empty((nPts, 3), dtype=np.float)
     cdef double[:,::1] lMomentumResT2 = np.empty((nPts, 3), dtype=np.float)
@@ -327,8 +330,6 @@ def OptimizedExplicitVMSAssemble(
             eNIds[i] = elements[iElm,i]
 
         for i in range(nPts):
-            lLHS[i] = 0.0
-            
             lNsdu[i,0] = 0.0
             lNsdu[i,1] = 0.0
             lNsdu[i,2] = 0.0
@@ -395,8 +396,7 @@ def OptimizedExplicitVMSAssemble(
                 atau[i,j] = du[eNIds[i],j] + sdu[iElm,i,j]
             # norm_av[i] = sqrt(av[i,0]**2 + av[i,1]**2 + av[i,2]**2)
             norm_atau[i] = sqrt(atau[i,0]**2 + atau[i,1]**2 + atau[i,2]**2)
-        # max_norm_av = max(norm_av[0], norm_av[1], norm_av[2], norm_av[3])
-        # max_norm_av = max(norm_av)
+        
         max_norm_av = max(norm_atau)
         tau_u_inv = c1*nu/(h**2) + c2*max_norm_av/h
         tau_t = 1.0 / (1.0/dt + tau_u_inv)
@@ -404,10 +404,17 @@ def OptimizedExplicitVMSAssemble(
         # Evaluate velocity sub-grid scales
         for i in range(nPts):
             for j in range(ndim):
-                Ru = tau_t*(av[i,0]*gradU[0,j] + av[i,1]*gradU[1,j] + av[i,2]*gradU[2,j] + gradP[j])
+                Ru = tau_t*(gradU[j,0]*av[i,0] + gradU[j,1]*av[i,1] + gradU[j,2]*av[i,2] + gradP[j])
                 nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_t/dt - Ru
-        
 
+        # for i in range(nPts):
+        #     avGradU[0] = gradU[0,0]*av[i,0] + gradU[0,1]*av[i,1] + gradU[0,2]*av[i,2] + gradP[0]
+        #     avGradU[1] = gradU[1,0]*av[i,0] + gradU[1,1]*av[i,1] + gradU[1,2]*av[i,2] + gradP[1]
+        #     avGradU[2] = gradU[2,0]*av[i,0] + gradU[2,1]*av[i,1] + gradU[2,2]*av[i,2] + gradP[2]
+        #     for j in range(ndim):
+        #         nsdu[iElm,i,j] = sdu[iElm,i,j]*tau_t/dt - tau_t*avGradU[j]
+
+        
         # Loop through Gaussian integration points and assemble
         for iGp in range(nGp):
             wGp = w[iGp] * volumes[iElm]
@@ -418,19 +425,19 @@ def OptimizedExplicitVMSAssemble(
             ah[2] = av[0,2]*lN[iGp,0] + av[1,2]*lN[iGp,1] + av[2,2]*lN[iGp,2] + av[3,2]*lN[iGp,3]
 
             # Evaluate velocity sub-grid scales
-            subgridF[0] = ah[0]*gradU[0,0] + ah[1]*gradU[1,0] + ah[2]*gradU[2,0] + gradP[0]
-            subgridF[1] = ah[0]*gradU[0,1] + ah[1]*gradU[1,1] + ah[2]*gradU[2,1] + gradP[1]
-            subgridF[2] = ah[0]*gradU[0,2] + ah[1]*gradU[1,2] + ah[2]*gradU[2,2] + gradP[2]
+            subgridF[0] = gradU[0,0]*ah[0] + gradU[0,1]*ah[1] + gradU[0,2]*ah[2] + gradP[0]
+            subgridF[1] = gradU[1,0]*ah[0] + gradU[1,1]*ah[1] + gradU[1,2]*ah[2] + gradP[1]
+            subgridF[2] = gradU[2,0]*ah[0] + gradU[2,1]*ah[1] + gradU[2,2]*ah[2] + gradP[2]
 
             for i in range(nPts):
                 lNsdu[i,0] += tau_t*subgridF[0]*lN[iGp,i]*wGp
                 lNsdu[i,1] += tau_t*subgridF[1]*lN[iGp,i]*wGp
                 lNsdu[i,2] += tau_t*subgridF[2]*lN[iGp,i]*wGp
 
-            # lLHS
-            for a in range(nPts):
-                for b in range(nPts):
-                    lLHS[a] += lN[iGp,a]*lN[iGp,b]*wGp
+            # # lLHS
+            # for a in range(nPts):
+            #     for b in range(nPts):
+            #         lLHS[a] += lN[iGp,a]*lN[iGp,b]*wGp
 
             # duh at Gaussian point iGp
             duh[0] = du[eNIds[0],0]*lN[iGp,0] + du[eNIds[1],0]*lN[iGp,1] + du[eNIds[2],0]*lN[iGp,2] + du[eNIds[3],0]*lN[iGp,3]                    
@@ -454,9 +461,9 @@ def OptimizedExplicitVMSAssemble(
             sduh[2] = sdu[iElm,0,2]*lN[iGp,0] + sdu[iElm,1,2]*lN[iGp,1] + sdu[iElm,2,2]*lN[iGp,2] + sdu[iElm,3,2]*lN[iGp,3]
             
             # ah dot GradHu
-            ahGradHu[0] = ah[0]*gradHu[0,0] + ah[1]*gradHu[1,0] + ah[2]*gradHu[2,0]
-            ahGradHu[1] = ah[0]*gradHu[0,1] + ah[1]*gradHu[1,1] + ah[2]*gradHu[2,1]
-            ahGradHu[2] = ah[0]*gradHu[0,2] + ah[1]*gradHu[1,2] + ah[2]*gradHu[2,2]
+            ahGradHu[0] = ah[0]*gradHu[0,0] + ah[1]*gradHu[0,1] + ah[2]*gradHu[0,2]
+            ahGradHu[1] = ah[0]*gradHu[1,0] + ah[1]*gradHu[1,1] + ah[2]*gradHu[1,2]
+            ahGradHu[2] = ah[0]*gradHu[2,0] + ah[1]*gradHu[2,1] + ah[2]*gradHu[2,2]
 
             # lRHS
             for a in range(nPts):

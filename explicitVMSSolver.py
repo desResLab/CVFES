@@ -41,15 +41,8 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.du = mesh.iniDu.reshape((self.mesh.nNodes, 3)) # velocity
         self.p = mesh.iniP # pressure
 
-        # self.odu = np.zeros_like(self.du)
-        # self.op = np.zeros_like(self.p)
-        self.odu = np.copy(self.du)
-        self.op = np.copy(self.p)
-
         self.sdu = np.zeros((self.mesh.nElements, 4, 3)) # sub-scale velocity
         self.nsdu = np.zeros_like(self.sdu) # sdu at next time step
-        self.sp = np.zeros((self.mesh.nElements, 4))
-        self.nsp = np.zeros_like(self.sp)
 
         # Prepare the parameters gonna used.
         # Diameters of inscribed sphere of tetrohedron
@@ -63,6 +56,10 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Initialize the boundary conditions
         # self.ApplyDirichletBCs(0.0)
         self.ApplyDirichletBCsWithRamp(0.0)
+        # self.DebugApplyDirichletBCs()
+
+        self.odu = np.copy(self.du)
+        self.op = np.copy(self.p)
 
         # # --- Attach the initial velocity and pressure together
         # self.res = np.empty((self.mesh.nNodes, dof), dtype=float)
@@ -100,7 +97,7 @@ class ExplicitVMSSolver(PhysicsSolver):
 
         # --- Initial assemble: DNs and LHS
         self.DNs = np.empty((nElms, vDof, nElmNodes), dtype=float)
-        self.volumes = np.zeros(nElms, dtype=float) # For debugging
+        self.volumes = np.zeros(nElms, dtype=float)
         self.LHS = np.zeros((dof*nNodes, dof*nNodes), dtype=float)
         lMs = np.zeros((nElms, vDof*nElmNodes, vDof*nElmNodes), dtype=float)
         self.invLMs = np.zeros_like(lMs)
@@ -191,6 +188,7 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Apply the Dirichlet boundary conditions.
         # self.ApplyDirichletBCs(t+dt)
         self.ApplyDirichletBCsWithRamp(t+dt)
+        # self.DebugApplyDirichletBCs()
         # print('Executing here!')
 
 
@@ -205,7 +203,9 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.du[self.mesh.wall] = 0.0
 
         # Only for debugging
-        self.p[self.mesh.outlet] = 0.0
+        # self.p[self.mesh.outlet] = 0.0
+        outlet = np.array([ol.glbNodeIds for ol in self.mesh.faces['outlet']]).ravel()
+        # self.p[outlet] = 0.0
 
 
     def ApplyDirichletBCsWithRamp(self, t):
@@ -225,7 +225,19 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.du[self.mesh.wall] = 0.0
 
         # Only for debugging
-        self.p[self.mesh.outlet] = 0.0
+        # self.p[self.mesh.outlet] = 0.0
+        outlet = np.array([ol.glbNodeIds for ol in self.mesh.faces['outlet']]).ravel()
+        # self.p[outlet] = 0.0
+
+
+    def DebugApplyDirichletBCs(self):
+        for outlet in self.mesh.faces['outlet']:
+            r = np.sqrt(self.mesh.nodes[outlet.appNodes,0]**2 + self.mesh.nodes[outlet.appNodes,1]**2)
+            self.du[outlet.appNodes,2] = 11.0 - 11.0/4.0*(r**2)
+
+        self.du[self.mesh.wall] = 0.0
+        # # Only for debugging
+        # self.p[self.mesh.outlet] = 0.0
 
 
     def Save(self, filename, counter):
@@ -235,7 +247,7 @@ class ExplicitVMSSolver(PhysicsSolver):
         resDu = res[:,:3].ravel()
         resP = res[:,-1].ravel()
 
-        vals = [self.du.reshape(self.mesh.nNodes, 3), self.p, resDu.reshape(self.mesh.nNodes, 3), resP,
+        vals = [self.du, self.p, resDu.reshape(self.mesh.nNodes, 3), resP,
                 self.mRT1.reshape(self.mesh.nNodes, 3), self.mRT2.reshape(self.mesh.nNodes, 3),
                 self.mRT3.reshape(self.mesh.nNodes, 3), self.mRT4.reshape(self.mesh.nNodes, 3),
                 self.mRT5.reshape(self.mesh.nNodes, 3), self.pRT1, self.pRT2]
