@@ -11,6 +11,7 @@ import math
 import numpy as np
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import gmres, LinearOperator, spilu
+from sklearn.linear_model import LinearRegression
 from mpi4py import MPI
 
 from physicsSolver import *
@@ -47,6 +48,8 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Prepare the parameters gonna used.
         # Diameters of inscribed sphere of tetrohedron
         self.mesh.calcInscribeDiameters()
+        # self.mesh.calcOutletNeighbors()
+        self.mesh.calcOutletNeighbors(5.0*11.7*self.dt)
         # Initialize the external_force
         # TODO:: Update when f is a real function of time and space !!!!!!!
         self.f = self.mesh.f * np.ones((self.mesh.nNodes, 3))
@@ -56,7 +59,9 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Initialize the boundary conditions
         # self.ApplyDirichletBCs(0.0)
         self.ApplyDirichletBCsWithRamp(0.0)
-        # self.DebugApplyDirichletBCs()
+
+        # self.mesh.DebugReadsInletVelocity()
+        # self.DebugApplyDirichletBCs(0.0)
 
         self.odu = np.copy(self.du)
         self.op = np.copy(self.p)
@@ -167,6 +172,7 @@ class ExplicitVMSSolver(PhysicsSolver):
                                      self.pRT1, self.pRT2)
 
         # Solve
+        # self.oodu = np.copy(self.odu)
         self.odu[:,:] = self.du
         self.op[:] = self.p
 
@@ -188,8 +194,10 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Apply the Dirichlet boundary conditions.
         # self.ApplyDirichletBCs(t+dt)
         self.ApplyDirichletBCsWithRamp(t+dt)
-        # self.DebugApplyDirichletBCs()
+        # self.DebugApplyDirichletBCs(t+dt)
         # print('Executing here!')
+
+        self.CorrectOutletBCs()
 
 
     def ApplyDirichletBCs(self, t):
@@ -206,6 +214,8 @@ class ExplicitVMSSolver(PhysicsSolver):
         # self.p[self.mesh.outlet] = 0.0
         outlet = np.array([ol.glbNodeIds for ol in self.mesh.faces['outlet']]).ravel()
         # self.p[outlet] = 0.0
+ 
+        # self.CorrectOutletBCs()
 
 
     def ApplyDirichletBCsWithRamp(self, t):
@@ -229,15 +239,99 @@ class ExplicitVMSSolver(PhysicsSolver):
         outlet = np.array([ol.glbNodeIds for ol in self.mesh.faces['outlet']]).ravel()
         # self.p[outlet] = 0.0
 
+        # self.CorrectOutletBCs()
 
-    def DebugApplyDirichletBCs(self):
-        for outlet in self.mesh.faces['outlet']:
-            r = np.sqrt(self.mesh.nodes[outlet.appNodes,0]**2 + self.mesh.nodes[outlet.appNodes,1]**2)
-            self.du[outlet.appNodes,2] = 11.0 - 11.0/4.0*(r**2)
+
+    def DebugApplyDirichletBCs(self, t):
+
+        for inlet in self.mesh.faces['inlet']:
+            self.du[inlet.appNodes] = self.mesh.dbgInletVelocity[inlet.appNodes]
+
+        # if t > self.constant_T:
+        #     for outlet in self.mesh.faces['outlet']:
+        #         r = np.sqrt(self.mesh.nodes[outlet.appNodes,0]**2 + self.mesh.nodes[outlet.appNodes,1]**2)
+        #         self.du[outlet.appNodes,2] = 11.0 - 11.0/4.0*(r**2)
+        # else:
+        #     for outlet in self.mesh.faces['outlet']:
+        #         r = np.sqrt(self.mesh.nodes[outlet.appNodes,0]**2 + self.mesh.nodes[outlet.appNodes,1]**2)
+        #         a = b = 0.5 * (11.0 - 11.0/4.0*(r**2))
+        #         n = math.pi/self.constant_T
+        #         self.du[outlet.appNodes,2] = a - b*math.cos(n*t)
 
         self.du[self.mesh.wall] = 0.0
         # # Only for debugging
         # self.p[self.mesh.outlet] = 0.0
+
+
+    # def CorrectOutletBCs(self):
+
+    #     nodes = self.mesh.nodes
+    #     neighbors = self.mesh.outletNeighbors
+        
+    #     for i,iOutlet in enumerate(self.mesh.outlet):
+    #         # res = np.concatenate((self.du[neighbors[i]], self.p[neighbors[i],np.newaxis]), axis=1)
+    #         # reg = LinearRegression().fit(nodes[neighbors[i]], res)
+    #         reg = LinearRegression().fit(nodes[neighbors[i]], self.du[neighbors[i],-1])
+    #         # print('Regression score: {}'.format(reg.score(nodes[neighbors[i]], res)))
+    #         if math.isnan(reg.score(nodes[neighbors[i]], self.du[neighbors[i],-1])):
+    #             print('Regression failed')
+    #             sys.exit(-1)
+
+    #         correctV = reg.predict(np.array([nodes[iOutlet]]))[0]
+
+    #         # if np.isnan(correctV).any():
+    #         #     print('Result is nan for {}'.format(iOutlet))
+    #         #     continue
+            
+    #         # self.du[iOutlet,:] = correctV[:3]
+    #         # self.p[iOutlet] = correctV[-1]
+    #         self.du[iOutlet,-1] = correctV
+
+    # def CorrectOutletBCs(self):
+
+    #     nodes = self.mesh.nodes
+    #     neighbors = self.mesh.outletNeighbors
+        
+    #     for i,iOutlet in enumerate(self.mesh.outlet):
+
+    #         self.du[iOutlet,-1] = np.mean(self.du[neighbors[i],-1])
+    #         # self.p[iOutlet] = np.mean(self.p[neighbors[i]])
+
+    # def CorrectOutletBCs(self):
+    #     nodes = self.mesh.nodes
+    #     neighbors = self.mesh.outletNeighbors
+
+    #     dt = self.dt
+    #     du = self.du
+    #     odu = self.odu
+    #     oodu = self.oodu
+
+    #     for i,iOutlet in enumerate(self.mesh.outlet):
+    #         dx = np.amin(self.mesh.inscribeDiameters)
+    #         ldx = nodes[iOutlet,-1] - np.mean(nodes[neighbors[i],-1])
+
+    #         phiT = (du[iOutlet,-1] - odu[iOutlet,-1]) / dt
+    #         phiX = (du[iOutlet,-1] - np.mean(du[neighbors[i],-1])) / ldx
+
+    #         phi = -phiT/phiX
+    #         dtddx = dt/dx
+    #         if phi > dx/dt:
+    #             # Cphi = dx/dt
+    #             du[iOutlet,-1] = np.mean(odu[neighbors[i],-1])
+    #         elif phi > 0:
+    #             # Cphi = phi
+    #             du[iOutlet,-1] = (1.0-dtddx*phi)/(1.0+dtddx*phi)*oodu[iOutlet,-1]+2.0*dtddx*phi/(1+dtddx*phi)*np.mean(odu[neighbors[i],-1])
+    #         else:
+    #             du[iOutlet,-1] = oodu[iOutlet,-1]
+
+    def CorrectOutletBCs(self):
+        elmNIds = self.mesh.elementNodeIds
+        du = self.du
+        odu = self.odu
+        
+        for outletFace in self.mesh.faces['outlet']:
+            for i,iOutlet in enumerate(outletFace.appNodes):
+                du[iOutlet,-1] = np.dot(odu[elmNIds[outletFace.neighbors[i]],-1], outletFace.neighborsNs[i])
 
 
     def Save(self, filename, counter):

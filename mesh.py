@@ -242,11 +242,12 @@ class FluidMesh(Mesh):
         self.f = eqnConfig.f
 
     def processFaces(self):
+        nodes = self.nodes
+        
         # Collect all the inlet and outlet
         self.wall = np.array([w.glbNodeIds for w in self.faces['wall']]).ravel()
 
         for inletFace in self.faces['inlet']:
-            nodes = self.nodes
             elmNIds = inletFace.elementNodeIds
             inlet = inletFace.glbNodeIds
             
@@ -279,9 +280,19 @@ class FluidMesh(Mesh):
         self.inlet = np.array([il.appNodes for il in self.faces['inlet']]).ravel()
 
         for outletFace in self.faces['outlet']:
+            elmNIds = outletFace.elementNodeIds
             outlet = outletFace.glbNodeIds
             outletFace.bdyFlags = np.isin(outlet, self.wall)
             outletFace.appNodes = outlet[~outletFace.bdyFlags]
+
+            # Calculate the outward normal to this outlet.
+            v = np.array([nodes[outlet[elmNIds[0,1]]] - nodes[outlet[elmNIds[0,0]]],
+                          nodes[outlet[elmNIds[0,2]]] - nodes[outlet[elmNIds[0,0]]]])
+            elmNormV = np.array([v[0,1]*v[1,2]-v[0,2]*v[1,1],
+                                 -v[0,0]*v[1,2]+v[0,2]*v[1,0],
+                                 v[0,0]*v[1,1]-v[0,1]*v[1,0]])
+            outletFace.normal = elmNormV / np.linalg.norm(elmNormV)
+
         # Set the outlet to be appliable outlet glbNodeIds
         self.outlet = np.array([ol.appNodes for ol in self.faces['outlet']]).ravel()
 
@@ -373,6 +384,136 @@ class FluidMesh(Mesh):
             # Calc the radius of the inscribed sphere
             r = 6.0*volume/area
             inscribeDiameters[iElm] = 2.0*r
+
+    def calcOutletNeighbors(self, c):
+        nodes = self.nodes
+        elmNIds = self.elementNodeIds
+        elmCenters = np.mean(nodes[elmNIds], axis=1)
+        for outletFace in self.faces['outlet']:
+            outletFace.neighbors = np.empty(len(outletFace.appNodes), dtype=int) # store element id
+            outletFace.neighborsNs = np.empty((len(outletFace.appNodes), 4), dtype=float)
+            for i,iOutlet in enumerate(outletFace.appNodes):
+                # The aiming point iOutlet - c*n
+                aimP = nodes[iOutlet] - c*outletFace.normal
+                # Find where it belong, incidentally, calculate shape function (barycentric coordinates)
+                # Find potential list
+                distanceList = np.argsort(np.linalg.norm(elmCenters - aimP, axis=1))
+                for iElm in distanceList:
+                    lNIds = elmNIds[iElm]
+                    # Calculate this elements inverse jacobian
+                    jCol0 = nodes[lNIds[1]] - nodes[lNIds[0]]
+                    jCol1 = nodes[lNIds[2]] - nodes[lNIds[0]]
+                    jCol2 = nodes[lNIds[3]] - nodes[lNIds[0]]
+                    # Cofactors
+                    # +0,0  -0,1  +0,2
+                    # -1,0  +1,1  -1,2
+                    # +2,0  -2,1  +2,2
+                    lCofac = np.array([[jCol1[1]*jCol2[2]-jCol1[2]*jCol2[1],
+                                        jCol0[2]*jCol2[1]-jCol0[1]*jCol2[2],
+                                        jCol0[1]*jCol1[2]-jCol0[2]*jCol1[1]],
+                                       [jCol2[0]*jCol1[2]-jCol1[0]*jCol2[2],
+                                        jCol0[0]*jCol2[2]-jCol2[0]*jCol0[2],
+                                        jCol0[2]*jCol1[0]-jCol0[0]*jCol1[2]],
+                                       [jCol1[0]*jCol2[1]-jCol1[1]*jCol2[0],
+                                        jCol0[1]*jCol2[0]-jCol0[0]*jCol2[1],
+                                        jCol0[0]*jCol1[1]-jCol1[0]*jCol0[1]]])
+                    lDet = jCol0[0]*lCofac[0,0]+jCol1[0]*lCofac[0,1]+jCol2[0]*lCofac[0,2]
+                    invJ = lCofac.T / lDet
+                    # Local barycentric coordinates invJ*(x - x0)
+                    lBcCoord = np.dot(invJ, aimP-nodes[lNIds[0]])
+
+                    if np.all(lBcCoord >= 0.0) and np.all(lBcCoord <= 1.0):
+                        
+                        outletFace.neighbors[i] = iElm
+                        outletFace.neighborsNs[i,0] = 1.0 - np.sum(lBcCoord)
+                        outletFace.neighborsNs[i,1:] = lBcCoord
+
+                        print('Find neighbor for {}, {}'.format(iOutlet, iElm))
+
+                        break
+
+
+    # def calcOutletNeighbors(self):
+
+    #     # Rules to decide if is neighbor
+    #     h = np.mean(self.inscribeDiameters)
+    #     glbD = 3.0 * h
+    #     rD = 2.4 * h
+    #     zD = 2.4 * h
+
+    #     nNeighbors = 4
+
+    #     nodes = self.nodes
+    #     labelIndices = np.arange(self.nNodes, dtype=int)
+    #     labelIndicesTag = np.ones(self.nNodes, dtype=bool)
+    #     labelIndicesTag[self.outlet] = False
+    #     noOutletIndices = labelIndices[labelIndicesTag]
+
+    #     outletNeighbors = [[] for _ in self.outlet]
+    #     for i,iOutlet in enumerate(self.outlet):
+    #         neighbors = self.findOutletNeighbors(i, iOutlet, nodes[noOutletIndices], nNeighbors, glbD, rD, zD)
+    #         # if len(neighbors) < nNeighbors:
+    #         #     print('First Failed to find neighbors for {}, neighbors {}'.format(iOutlet, neighbors))
+    #         #     neighbors = self.findOutletNeighbors(i, iOutlet, nodes[noOutletIndices], 2*nNeighbors, 2.0*glbD, 2.0*rD, 2.0*zD)
+    #         #     if len(neighbors) < nNeighbors:
+    #         #         print('Failed to find neighbors for {}, neighbors {}'.format(iOutlet, neighbors))
+    #         #         sys.exit(-1)
+
+    #         # outletNeighbors[i].extend(np.array(neighbors, dtype=int))
+    #         outletNeighbors[i].extend(noOutletIndices[neighbors])
+
+    #     self.outletNeighbors = outletNeighbors
+
+    # def findOutletNeighbors(self, i, iOutlet, wNodes, nNeighbors, glbD, rD, zD):
+    #     hs = self.inscribeDiameters
+
+    #     ol = self.nodes[iOutlet]
+    #     # Get the neighbors in big range - potential neighbors
+    #     # # pNghb = np.argwhere(np.linalg.norm(nodes - ol, axis=1) < glbD*hs[iOutlet])[:,0]
+    #     # pNghb = np.argsort(np.linalg.norm(wNodes - ol, axis=1))[:3*nNeighbors]
+    #     # rNghb = np.linalg.norm(wNodes[pNghb,:2] - ol[:2], axis=1) < rD
+    #     # zNbDist = np.abs(wNodes[pNghb,-1] - ol[-1])
+    #     # zNghb = np.logical_and(zNbDist > 0.3*hs[iOutlet], zNbDist < zD)
+
+    #     # return pNghb[np.logical_and(rNghb, zNghb)]
+
+    #     pNghb = np.argsort(np.linalg.norm(wNodes - ol, axis=1))[:3]
+    #     return pNghb
+
+
+    def DebugSaveNeighbors(self):
+
+        # Save outlet too
+        mark = np.zeros(self.nNodes)
+        mark[self.outlet] = 13.0
+        uTuples = numpy_to_vtk(mark)
+        uTuples.SetName('outlet')
+        self.polyDataModel.GetPointData().AddArray(uTuples)
+
+        randomCheck = np.random.choice(len(self.outlet), 5)
+        for iRdm in randomCheck:
+
+            mark = np.zeros(self.nNodes)
+            mark[self.outletNeighbors[iRdm]] = 3.0
+            uTuples = numpy_to_vtk(mark)
+            uTuples.SetName('{}_neighbor'.format(self.outlet[iRdm]))
+            self.polyDataModel.GetPointData().AddArray(uTuples)
+        
+        writer = vtk.vtkXMLUnstructuredGridWriter()
+        writer.SetInputData(self.polyDataModel)
+        writer.SetFileName('Examples/CylinderProject/Results/neighbors.vtu')
+        writer.Write()
+
+    def DebugReadsInletVelocity(self):
+        reader = vtk.vtkXMLUnstructuredGridReader()
+        reader.SetFileName('Examples/CylinderProject/Results/inletVelocity.vtu')
+        reader.Update()
+
+        polyDataModel = reader.GetOutput()
+
+        # Set the nodes and coordinates.
+        self.dbgInletVelocity = vtk_to_numpy(polyDataModel.GetPointData().GetArray('velocity'))
+
 
     def Save(self, filename, counter, u, stress, uname='velocity'):
         """ Save the stress result of elements at time t with stress tensor of dim.

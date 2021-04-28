@@ -477,6 +477,13 @@ def OptimizedExplicitVMSAssemble(
                 T1[2] = nu*(gradHu[2,0]*DNs[iElm,0,a]+gradHu[2,1]*DNs[iElm,1,a]+gradHu[2,2]*DNs[iElm,2,a]) \
                         - hph*DNs[iElm,2,a] - sduh[2]*varT1
 
+                # T1[0] = nu*(symGradHu[0,0]*DNs[iElm,0,a]+symGradHu[0,1]*DNs[iElm,1,a]+symGradHu[0,2]*DNs[iElm,2,a]) \
+                #         - hph*DNs[iElm,0,a] - sduh[0]*varT1
+                # T1[1] = nu*(symGradHu[1,0]*DNs[iElm,0,a]+symGradHu[1,1]*DNs[iElm,1,a]+symGradHu[1,2]*DNs[iElm,2,a]) \
+                #         - hph*DNs[iElm,1,a] - sduh[1]*varT1
+                # T1[2] = nu*(symGradHu[2,0]*DNs[iElm,0,a]+symGradHu[2,1]*DNs[iElm,1,a]+symGradHu[2,2]*DNs[iElm,2,a]) \
+                #         - hph*DNs[iElm,2,a] - sduh[2]*varT1
+
                 lRHS[a,0] += duh[0]*lN[iGp,a]*wGp
                 lRHS[a,1] += duh[1]*lN[iGp,a]*wGp
                 lRHS[a,2] += duh[2]*lN[iGp,a]*wGp
