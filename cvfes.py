@@ -12,7 +12,7 @@ from cvconfig import CVConfig
 # from cvcomm import CVCOMM
 from mesh import *
 from solver import *
-from meshPartition import MeshPartition
+from meshPartition import SolidMeshPartition, FluidMeshPartition
 from meshColoring import MeshColoring
 
 from mpi4py import MPI
@@ -63,10 +63,16 @@ class CVFES:
             print('Number of samples: {}'.format(config.solver.nSmp))
 
     def Distribute(self):
-        # TODO:: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        wallPart = SolidMeshPartition()
         wallPartName = 'MeshPartition/Wall_{}_{}_{}'.format(self.name, self.size, self.rank)
-        if MeshPartition(wallPartName, self.comm, self.meshes['wall']) < 0:
+        if wallPart.Partition(wallPartName, self.comm, self.meshes['wall']) < 0:
             print('Distribute mesh failed!')
+            return -1
+
+        volPart = FluidMeshPartition()
+        volPartName = 'MeshPartition/Volume_{}_{}_{}'.format(self.name, self.size, self.rank)
+        if volPart.Partition(volPartName, self.comm, self.meshes['lumen']) < 0:
+            print('Distribute fluid mesh failed!')
             return -1
 
         return 0
@@ -92,7 +98,8 @@ class CVFES:
             'transient': TransientSolver,
             'transient GPU': TransientSolverGPU,
             'transient generalized-a': TransientGeneralizedASolver,
-            'explicit VMS': TransientExplicitVMSSolver
+            'explicit VMS': TransientExplicitVMSSolver,
+            'explicit VMS GPU': TransientExplicitVMSSolverGPU
         }
 
         SolverClass = solverSwitcher.get(self.cvConfig.solver.method, None)

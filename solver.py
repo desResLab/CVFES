@@ -186,3 +186,12 @@ class TransientExplicitVMSSolver(TransientSolver):
         self.fluidSolver = ExplicitVMSSolver(comm, meshes['lumen'], config)
         self.solidSolver = ExplicitVMSSolidSolver(comm, meshes['wall'], config)
 
+
+""" For explicit VMS method on GPU:
+"""
+class TransientExplicitVMSSolverGPU(Solver):
+
+    def __init__(self, comm, meshes, config):
+        Solver.__init__(self, comm, meshes, config)
+
+
