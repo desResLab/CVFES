@@ -393,44 +393,55 @@ class FluidMesh(Mesh):
             outletFace.neighbors = np.empty(len(outletFace.appNodes), dtype=int) # store element id
             outletFace.neighborsNs = np.empty((len(outletFace.appNodes), 4), dtype=float)
             for i,iOutlet in enumerate(outletFace.appNodes):
-                # The aiming point iOutlet - c*n
-                aimP = nodes[iOutlet] - c*outletFace.normal
-                # Find where it belong, incidentally, calculate shape function (barycentric coordinates)
-                # Find potential list
-                distanceList = np.argsort(np.linalg.norm(elmCenters - aimP, axis=1))
-                for iElm in distanceList:
-                    lNIds = elmNIds[iElm]
-                    # Calculate this elements inverse jacobian
-                    jCol0 = nodes[lNIds[1]] - nodes[lNIds[0]]
-                    jCol1 = nodes[lNIds[2]] - nodes[lNIds[0]]
-                    jCol2 = nodes[lNIds[3]] - nodes[lNIds[0]]
-                    # Cofactors
-                    # +0,0  -0,1  +0,2
-                    # -1,0  +1,1  -1,2
-                    # +2,0  -2,1  +2,2
-                    lCofac = np.array([[jCol1[1]*jCol2[2]-jCol1[2]*jCol2[1],
-                                        jCol0[2]*jCol2[1]-jCol0[1]*jCol2[2],
-                                        jCol0[1]*jCol1[2]-jCol0[2]*jCol1[1]],
-                                       [jCol2[0]*jCol1[2]-jCol1[0]*jCol2[2],
-                                        jCol0[0]*jCol2[2]-jCol2[0]*jCol0[2],
-                                        jCol0[2]*jCol1[0]-jCol0[0]*jCol1[2]],
-                                       [jCol1[0]*jCol2[1]-jCol1[1]*jCol2[0],
-                                        jCol0[1]*jCol2[0]-jCol0[0]*jCol2[1],
-                                        jCol0[0]*jCol1[1]-jCol1[0]*jCol0[1]]])
-                    lDet = jCol0[0]*lCofac[0,0]+jCol1[0]*lCofac[0,1]+jCol2[0]*lCofac[0,2]
-                    invJ = lCofac.T / lDet
-                    # Local barycentric coordinates invJ*(x - x0)
-                    lBcCoord = np.dot(invJ, aimP-nodes[lNIds[0]])
+                self.calcOneNeighbor(nodes, elmNIds, elmCenters, outletFace, i, iOutlet, c,
+                                     outletFace.neighbors, outletFace.neighborsNs)
+            # Find neighbors' neighbors
+            outletFace.neineighbors = np.empty_like(outletFace.neighbors)
+            outletFace.neineighborsNs = np.empty_like(outletFace.neighborsNs)
+            for i,iOutletNei in enumerate(outletFace.appNodes):
+                self.calcOneNeighbor(nodes, elmNIds, elmCenters, outletFace, i, iOutletNei, 2.0*c,
+                                     outletFace.neineighbors, outletFace.neineighborsNs)
+                
 
-                    if np.all(lBcCoord >= 0.0) and np.all(lBcCoord <= 1.0):
-                        
-                        outletFace.neighbors[i] = iElm
-                        outletFace.neighborsNs[i,0] = 1.0 - np.sum(lBcCoord)
-                        outletFace.neighborsNs[i,1:] = lBcCoord
+    def calcOneNeighbor(self, nodes, elmNIds, elmCenters, outletFace, i, iOutlet, c, neighbors, neighborsNs):
+        # The aiming point iOutlet - c*n
+        aimP = nodes[iOutlet] - c*outletFace.normal
+        # Find where it belong, incidentally, calculate shape function (barycentric coordinates)
+        # Find potential list
+        distanceList = np.argsort(np.linalg.norm(elmCenters - aimP, axis=1))
+        for iElm in distanceList:
+            lNIds = elmNIds[iElm]
+            # Calculate this elements inverse jacobian
+            jCol0 = nodes[lNIds[1]] - nodes[lNIds[0]]
+            jCol1 = nodes[lNIds[2]] - nodes[lNIds[0]]
+            jCol2 = nodes[lNIds[3]] - nodes[lNIds[0]]
+            # Cofactors
+            # +0,0  -0,1  +0,2
+            # -1,0  +1,1  -1,2
+            # +2,0  -2,1  +2,2
+            lCofac = np.array([[jCol1[1]*jCol2[2]-jCol1[2]*jCol2[1],
+                                jCol0[2]*jCol2[1]-jCol0[1]*jCol2[2],
+                                jCol0[1]*jCol1[2]-jCol0[2]*jCol1[1]],
+                               [jCol2[0]*jCol1[2]-jCol1[0]*jCol2[2],
+                                jCol0[0]*jCol2[2]-jCol2[0]*jCol0[2],
+                                jCol0[2]*jCol1[0]-jCol0[0]*jCol1[2]],
+                               [jCol1[0]*jCol2[1]-jCol1[1]*jCol2[0],
+                                jCol0[1]*jCol2[0]-jCol0[0]*jCol2[1],
+                                jCol0[0]*jCol1[1]-jCol1[0]*jCol0[1]]])
+            lDet = jCol0[0]*lCofac[0,0]+jCol1[0]*lCofac[0,1]+jCol2[0]*lCofac[0,2]
+            invJ = lCofac.T / lDet
+            # Local barycentric coordinates invJ*(x - x0)
+            lBcCoord = np.dot(invJ, aimP-nodes[lNIds[0]])
 
-                        print('Find neighbor for {}, {}'.format(iOutlet, iElm))
+            if np.all(lBcCoord >= 0.0) and np.all(lBcCoord <= 1.0):
+                
+                neighbors[i] = iElm
+                neighborsNs[i,0] = 1.0 - np.sum(lBcCoord)
+                neighborsNs[i,1:] = lBcCoord
 
-                        break
+                # print('Find neighbor for {}, {}'.format(iOutlet, iElm))
+
+                break
 
 
     # def calcOutletNeighbors(self):

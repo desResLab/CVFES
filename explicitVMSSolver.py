@@ -22,6 +22,8 @@ from optimizedExplicitVMSAssemble import OptimizedExplicitVMSInitialAssemble
 # Parameters for the explicit solver.
 c1 = 4.0
 c2 = 2.0
+# c = 5.0*(11.7**2.0)
+c = 5.0*11.7
 
 vDof = 3
 pDof = 1
@@ -49,7 +51,7 @@ class ExplicitVMSSolver(PhysicsSolver):
         # Diameters of inscribed sphere of tetrohedron
         self.mesh.calcInscribeDiameters()
         # self.mesh.calcOutletNeighbors()
-        self.mesh.calcOutletNeighbors(5.0*11.7*self.dt)
+        self.mesh.calcOutletNeighbors(c*self.dt)
         # Initialize the external_force
         # TODO:: Update when f is a real function of time and space !!!!!!!
         self.f = self.mesh.f * np.ones((self.mesh.nNodes, 3))
@@ -65,6 +67,8 @@ class ExplicitVMSSolver(PhysicsSolver):
 
         self.odu = np.copy(self.du)
         self.op = np.copy(self.p)
+        # self.om2du = self.om1du = self.odu
+        # self.om2p = self.om1p = self.op
 
         # # --- Attach the initial velocity and pressure together
         # self.res = np.empty((self.mesh.nNodes, dof), dtype=float)
@@ -152,7 +156,7 @@ class ExplicitVMSSolver(PhysicsSolver):
 
         # Calculate the invEpsilon for artificial incompressible coef.
         ASS = 5.0
-        self.coefs[4] = (5.0*11.7)**2.0
+        self.coefs[4] = c**2.0
         # self.coefs[4] = (5.0*11.7*11.7)**2.0
         # print('The invEpsilon = {}'.format(self.coefs[4]))
 
@@ -172,9 +176,12 @@ class ExplicitVMSSolver(PhysicsSolver):
                                      self.pRT1, self.pRT2)
 
         # Solve
-        # self.oodu = np.copy(self.odu)
-        self.odu[:,:] = self.du
-        self.op[:] = self.p
+        # self.om2du = self.om1du
+        # self.om1du = self.odu
+        self.odu = self.du
+        # self.om2p = self.om1p
+        # self.om1p = self.op
+        self.op = self.p
 
         self.sdu = self.nsdu
         self.nsdu = np.zeros_like(self.sdu)
@@ -188,8 +195,8 @@ class ExplicitVMSSolver(PhysicsSolver):
         self.res = - dt*self.R/self.lumpLHS
 
         self.res = self.res.reshape((nNodes, dof))
-        self.du[:,:] = self.du + self.res[:,:3]
-        self.p[:] = self.p + self.res[:,-1]
+        self.du = self.du + self.res[:,:3]
+        self.p = self.p + self.res[:,-1]
 
         # Apply the Dirichlet boundary conditions.
         # self.ApplyDirichletBCs(t+dt)
@@ -236,7 +243,7 @@ class ExplicitVMSSolver(PhysicsSolver):
 
         # Only for debugging
         # self.p[self.mesh.outlet] = 0.0
-        outlet = np.array([ol.glbNodeIds for ol in self.mesh.faces['outlet']]).ravel()
+        # outlet = np.array([ol.glbNodeIds for ol in self.mesh.faces['outlet']]).ravel()
         # self.p[outlet] = 0.0
 
         # self.CorrectOutletBCs()
@@ -328,27 +335,84 @@ class ExplicitVMSSolver(PhysicsSolver):
         elmNIds = self.mesh.elementNodeIds
         du = self.du
         odu = self.odu
+        # p = self.p
+        # oop = self.oop
         
         for outletFace in self.mesh.faces['outlet']:
             for i,iOutlet in enumerate(outletFace.appNodes):
-                du[iOutlet,-1] = np.dot(odu[elmNIds[outletFace.neighbors[i]],-1], outletFace.neighborsNs[i])
+                du[iOutlet,-1] = np.dot(outletFace.neighborsNs[i], odu[elmNIds[outletFace.neighbors[i]]])[-1]
+                # du[iOutlet,0:2] = 0.0
+                # p[iOutlet] = np.dot(outletFace.neighborsNs[i], op[elmNIds[outletFace.neighbors[i]]])
+                # p[iOutlet] = oop[iOutlet]
+
+    # def CorrectOutletBCs(self):
+    #     """ tau+1: du; tau : odu; tau-1 : om1du; tau-2 : om2du """
+    #     elmNIds = self.mesh.elementNodeIds
+    #     du = self.du
+    #     odu = self.odu
+    #     om1du = self.om1du
+    #     om2du = self.om2du
+        
+    #     # p = self.p
+    #     # op = self.op
+    #     # om1p = self.om1p
+    #     # om2p = self.om2p
+
+    #     dt = self.dt
+    #     dx = c*dt
+    #     dtddx = dt/dx
+        
+    #     for outletFace in self.mesh.faces['outlet']:
+    #         for i,iOutlet in enumerate(outletFace.appNodes):
+    #             # Decide the C_phi first
+    #             neiTau = np.dot(outletFace.neighborsNs[i], odu[elmNIds[outletFace.neighbors[i]]])[-1]
+    #             neiTauM2 = np.dot(outletFace.neighborsNs[i], om2du[elmNIds[outletFace.neighbors[i]]])[-1]
+    #             neineiTauM1 = np.dot(outletFace.neineighborsNs[i], om1du[elmNIds[outletFace.neineighbors[i]]])[-1]
+                
+    #             Cphi = -(neiTau-neiTauM2)*dx/((neiTau+neiTauM2)/2.0-neineiTauM1)/(2.0*dt)
+    #             if Cphi > c:
+    #                 # Cphi = C
+    #                 du[iOutlet,-1] = neiTau
+    #             elif Cphi > 0.0:
+    #                 du[iOutlet,-1] = ((1.0-dtddx*Cphi)*om1du[iOutlet,-1]+2*dtddx*Cphi*neiTau)/(1.0+dtddx*Cphi)
+    #             else:
+    #                 du[iOutlet,-1] = om1du[iOutlet,-1]
+    #             du[iOutlet,0:2] = 0.0
+
+    #             # # Decide the C_phi first
+    #             # neiTau = np.dot(outletFace.neighborsNs[i], op[elmNIds[outletFace.neighbors[i]]])
+    #             # neiTauM2 = np.dot(outletFace.neighborsNs[i], om2p[elmNIds[outletFace.neighbors[i]]])
+    #             # neineiTauM1 = np.dot(outletFace.neineighborsNs[i], om1p[elmNIds[outletFace.neineighbors[i]]])
+                
+    #             # Cphi = -(neiTau-neiTauM2)*dx/((neiTau+neiTauM2)/2.0-neineiTauM1)/(2.0*dt)
+    #             # if Cphi > c:
+    #             #     # Cphi = C
+    #             #     p[iOutlet] = neiTau
+    #             # elif Cphi > 0.0:
+    #             #     p[iOutlet] = ((1.0-dtddx*Cphi)*om1p[iOutlet]+2*dtddx*Cphi*neiTau)/(1.0+dtddx*Cphi)
+    #             # else:
+    #             #     p[iOutlet] = om1p[iOutlet]
 
 
     def Save(self, filename, counter):
         # self.mesh.Save(filename, counter, self.du.reshape(self.mesh.nNodes, 3), self.p, 'velocity')
 
-        res = self.R.reshape((self.mesh.nNodes, self.Dof))
-        resDu = res[:,:3].ravel()
-        resP = res[:,-1].ravel()
+        # res = self.R.reshape((self.mesh.nNodes, self.Dof))
+        # resDu = res[:,:3].ravel()
+        # resP = res[:,-1].ravel()
 
-        vals = [self.du, self.p, resDu.reshape(self.mesh.nNodes, 3), resP,
-                self.mRT1.reshape(self.mesh.nNodes, 3), self.mRT2.reshape(self.mesh.nNodes, 3),
-                self.mRT3.reshape(self.mesh.nNodes, 3), self.mRT4.reshape(self.mesh.nNodes, 3),
-                self.mRT5.reshape(self.mesh.nNodes, 3), self.pRT1, self.pRT2]
-        names = ['velocity', 'pressure', 'momentum_res', 'pressure_res', 'momentum_res_term1',
-                 'momentum_res_term2', 'momentum_res_term3', 'momentum_res_term4', 'momentum_res_term5',
-                 'pressure_res_term1', 'pressure_res_term2']
-        ptData = np.ones(11, dtype=bool)
+        # vals = [self.du, self.p, resDu.reshape(self.mesh.nNodes, 3), resP,
+        #         self.mRT1.reshape(self.mesh.nNodes, 3), self.mRT2.reshape(self.mesh.nNodes, 3),
+        #         self.mRT3.reshape(self.mesh.nNodes, 3), self.mRT4.reshape(self.mesh.nNodes, 3),
+        #         self.mRT5.reshape(self.mesh.nNodes, 3), self.pRT1, self.pRT2]
+        # names = ['velocity', 'pressure', 'momentum_res', 'pressure_res', 'momentum_res_term1',
+        #          'momentum_res_term2', 'momentum_res_term3', 'momentum_res_term4', 'momentum_res_term5',
+        #          'pressure_res_term1', 'pressure_res_term2']
+        # ptData = np.ones(11, dtype=bool)
+
+        vals = [self.du, self.p]
+        names = ['velocity', 'pressure']
+        ptData = np.ones(2, dtype=bool)
         
         self.mesh.DebugSave(filename, counter, vals, names, ptData)
 

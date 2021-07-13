@@ -156,7 +156,7 @@ class GPUSolidSolver(PhysicsSolver):
         # self.elmNodeIds_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.elementNodeIds)
         # mesh coloring's color tags
         self.colorGps_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.lclElmNodeIds[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
-        self.colorGps_elmIds_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.colorGroups[i]) for i in range(len(self.mesh.colorGroups))]
+        # self.colorGps_elmIds_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.colorGroups[i]) for i in range(len(self.mesh.colorGroups))]
 
         # for calculating M (mass) matrix, do not need to always exist in GPU memory
         thickness_buf = cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = self.mesh.vthickness[self.lclNodeIds])
@@ -173,7 +173,7 @@ class GPUSolidSolver(PhysicsSolver):
         # - thickness x E
         elmTE = np.mean(elmVerE*elmVerThick, axis=2)
         self.elmTE_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = elmTE[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
-        self.elmE_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = elmAveE[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
+        # self.elmE_buf = [cl.Buffer(self.context, mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, hostbuf = elmAveE[self.mesh.colorGroups[i]]) for i in range(len(self.mesh.colorGroups))]
 
         # for calculating K (stiffness) matrix, D needs
         k = 5.0/6.0
