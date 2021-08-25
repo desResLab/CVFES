@@ -23,6 +23,7 @@ from physicsSolverSDampGPUs import *
 from generalizedAlphaSolver import *
 # from generalizedAlphaSolverRe import *
 from explicitVMSSolver import *
+from explicitVMSSolverGPUs import *
 
 from timeit import default_timer as timer
 # from math import floor
@@ -189,9 +190,13 @@ class TransientExplicitVMSSolver(TransientSolver):
 
 """ For explicit VMS method on GPU:
 """
-class TransientExplicitVMSSolverGPU(Solver):
+class TransientExplicitVMSSolverGPU(TransientSolver):
 
     def __init__(self, comm, meshes, config):
-        Solver.__init__(self, comm, meshes, config)
+        TransientSolver.__init__(self, comm, meshes, config)
+
+    def __initPhysicSolver__(self, comm, meshes, config):
+        self.fluidSolver = ExplicitVMSSolverGPUs(comm, meshes['lumen'], config)
+        self.solidSolver = ExplicitVMSSolidSolverGPUs(comm, meshes['wall'], config)
 
 

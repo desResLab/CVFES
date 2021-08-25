@@ -21,7 +21,20 @@ class MeshPartition(object):
         self.elmCommNodes = 3
 
     def SpecialAssignment(self, mesh):
-        pass
+        # Assign global info to local directly.
+        mesh.lclNCommNodes = 0
+        
+        mesh.lclNNodes = mesh.nNodes
+        mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
+        mesh.lclNSpecialHead = mesh.lclNBoundary = len(mesh.boundary)
+        mesh.lclNodeIds[:mesh.lclNBoundary] = mesh.boundary
+        lclNodeIds = np.arange(mesh.lclNNodes, dtype=int)
+        mesh.lclNodeIds[mesh.lclNBoundary:] = lclNodeIds[~np.in1d(lclNodeIds, mesh.boundary)]
+
+        sorter = np.argsort(mesh.lclNodeIds)
+        mesh.lclElmNodeIds = sorter[np.searchsorted(mesh.lclNodeIds, mesh.elementNodeIds, sorter=sorter)]
+
+        mesh.lclBoundary = np.where(np.in1d(mesh.lclNodeIds, mesh.boundary))[0]
 
     def CalcLocalInfo(self, size, mesh):
         pass
@@ -40,7 +53,6 @@ class MeshPartition(object):
 
     def Save(self, size, name, mesh):
         """Save the partition results into local files and read from files if existing."""
-        self.CalcLocalInfo(size, mesh)
 
         np.savez(name, nElms=mesh.nElements, elms=mesh.elements,
                  elmIds=mesh.elementsIds, elmNodeIds=mesh.elementNodeIds,
@@ -225,6 +237,7 @@ class MeshPartition(object):
         mesh.totalCommNodeIds = commonNodes
         mesh.commNodeIds = np.intersect1d(commonNodes, myNodes)
 
+        self.CalcLocalInfo(size, mesh)
         self.Save(size, name, mesh)
         return 0
 
@@ -236,22 +249,6 @@ class SolidMeshPartition(MeshPartition):
         
         self.elmNodes = 3
         self.elmCommNodes = 2
-
-    def SpecialAssignment(self, mesh):
-        # Assign global info to local directly.
-        mesh.lclNCommNodes = 0
-        
-        mesh.lclNNodes = mesh.nNodes
-        mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
-        mesh.lclNSpecialHead = mesh.lclNBoundary = len(mesh.boundary)
-        mesh.lclNodeIds[:mesh.lclNBoundary] = mesh.boundary
-        lclNodeIds = np.arange(mesh.lclNNodes, dtype=int)
-        mesh.lclNodeIds[mesh.lclNBoundary:] = lclNodeIds[~np.in1d(lclNodeIds, mesh.boundary)]
-
-        sorter = np.argsort(mesh.lclNodeIds)
-        mesh.lclElmNodeIds = sorter[np.searchsorted(mesh.lclNodeIds, mesh.elementNodeIds, sorter=sorter)]
-
-        mesh.lclBoundary = np.where(np.in1d(mesh.lclNodeIds, mesh.boundary))[0]
 
     def CalcLocalInfo(self, size, mesh):
         """ Calculate local node Ids from the partitioning result. """
@@ -265,7 +262,8 @@ class SolidMeshPartition(MeshPartition):
         mesh.lclNCommNodes = len(mesh.commNodeIds)
         mesh.lclNodeIds[:mesh.lclNCommNodes] = mesh.commNodeIds
         # 2. Second chunk is the boundary nodes' ids if have any.
-        lclBdyFlag = np.in1d(lclNodeIds, mesh.boundary)
+        resBondary = mesh.boundary[~np.in1d(mesh.boundary, mesh.commNodeIds)]
+        lclBdyFlag = np.in1d(lclNodeIds, resBondary)
         mesh.lclNBoundary = np.sum(lclBdyFlag)
         # Length of the beginning chunk that needs to transfer back and forth btw GPUs and CPUs.
         mesh.lclNSpecialHead = mesh.lclNCommNodes + mesh.lclNBoundary
@@ -289,14 +287,49 @@ class FluidMeshPartition(MeshPartition):
         self.elmNodes = 4
         self.elmCommNodes = 3
 
-    def Save(self, size, name, mesh):
+    def CalcLocalInfo(self, size, mesh):
+        """ Calculate local node Ids from the partitioning result. """
+
+        # Local node ids contained in each partation.
+        lclNodeIds = np.sort(np.unique(mesh.elementNodeIds.ravel()))
+
+        mesh.lclNNodes = len(lclNodeIds)
+        mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
+        # 1. First chunk is the common nodes' ids.
+        mesh.lclNCommNodes = len(mesh.commNodeIds)
+        mesh.lclNodeIds[:mesh.lclNCommNodes] = mesh.commNodeIds
+        # Length of the beginning chunk that needs to transfer back and forth btw GPUs and CPUs.
+        mesh.lclNSpecialHead = mesh.lclNCommNodes
+        # 3. Fill up the rest with the normal nodes that can always stay in GPUs.
+        lclNormalFlag = ~np.in1d(lclNodeIds, mesh.commNodeIds)
+        mesh.lclNodeIds[mesh.lclNSpecialHead:] = lclNodeIds[lclNormalFlag]
+
+        # Elemental local node ids.
+        sorter = np.argsort(mesh.lclNodeIds)
+        mesh.lclElmNodeIds = sorter[np.searchsorted(mesh.lclNodeIds, mesh.elementNodeIds, sorter=sorter)]
+
+        # Mesh boundary local ids.
+        # --- inlet ---
+        mesh.lclInletIndices = np.where(np.in1d(mesh.lclNodeIds, mesh.inlet))[0]
+        mesh.lclNInlet = len(mesh.lclInletIndices)
+        lclInletIds = mesh.lclNodeIds[mesh.lclInletIndices]
         
-        if mesh.partition is None:
-            return 0
+        inletSorter = np.argsort(mesh.inlet)
+        mesh.lclInletValueIndices = inletSorter[np.searchsorted(mesh.inlet, lclInletIds, sorter=inletSorter)]
+        # --- wall ---
+        mesh.lclWallIndices = np.where(np.in1d(mesh.lclNodeIds, mesh.wall))[0]
+        # --- boundary (inlet+wall) ---
+        mesh.lclBoundary = np.concatenate((mesh.lclInletIndices, mesh.lclWallIndices))
+
+    
+    # def Save(self, size, name, mesh):
         
-        filename = 'Examples/CylinderProject/Results/partitionDbg.vtu'
-        counter = 0
-        vals = [mesh.partition]
-        uname = ['partition']
-        pointData = [False]
-        mesh.DebugSave(filename, counter, vals, uname, pointData)
+    #     if mesh.partition is None:
+    #         return 0
+        
+    #     filename = 'Examples/CylinderProject/Results/partitionDbg.vtu'
+    #     counter = 0
+    #     vals = [mesh.partition]
+    #     uname = ['partition']
+    #     pointData = [False]
+    #     mesh.DebugSave(filename, counter, vals, uname, pointData)

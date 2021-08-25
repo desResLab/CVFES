@@ -83,6 +83,11 @@ class CVFES:
             print('Coloring mesh failed!')
             return -1
 
+        volColoringName = 'MeshColoring/Volume_{}_{}_{}'.format(self.name, self.size, self.rank)
+        if MeshColoring(volColoringName, self.meshes['lumen'], nColors=50) < 0:
+            print('Coloring fluid mesh failed!')
+            return -1
+
         return 0
 
 

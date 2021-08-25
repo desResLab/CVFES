@@ -297,6 +297,10 @@ class FluidMesh(Mesh):
         self.outlet = np.array([ol.appNodes for ol in self.faces['outlet']]).ravel()
 
 
+        # # Combine all the inlet, wall, and outlet to boundary.
+        # self.boundary = np.concatenate((self.inlet, self.wall, self.outlet))
+
+
     def setInitialConditions(self, iniCondConfig):
         # Set the acceleration
         self.iniDDu = self.setCondition(iniCondConfig.acceleration, 'acceleration')

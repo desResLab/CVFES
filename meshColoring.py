@@ -6,9 +6,9 @@ from mesh import *
 # last color is reserved
 def MeshColoring(name, mesh, nColors=23, maxNeighbors=50):
 
-    nNodes = mesh.nNodes
+    nNodes = mesh.lclNNodes
     nElms = mesh.nElements
-    elmNodeIds = mesh.elementNodeIds
+    elmNodeIds = mesh.lclElmNodeIds
 
     # Try to load the coloring result first.
     if os.path.exists('{}.npz'.format(name)):
