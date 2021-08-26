@@ -21,20 +21,7 @@ class MeshPartition(object):
         self.elmCommNodes = 3
 
     def SpecialAssignment(self, mesh):
-        # Assign global info to local directly.
-        mesh.lclNCommNodes = 0
-        
-        mesh.lclNNodes = mesh.nNodes
-        mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
-        mesh.lclNSpecialHead = mesh.lclNBoundary = len(mesh.boundary)
-        mesh.lclNodeIds[:mesh.lclNBoundary] = mesh.boundary
-        lclNodeIds = np.arange(mesh.lclNNodes, dtype=int)
-        mesh.lclNodeIds[mesh.lclNBoundary:] = lclNodeIds[~np.in1d(lclNodeIds, mesh.boundary)]
-
-        sorter = np.argsort(mesh.lclNodeIds)
-        mesh.lclElmNodeIds = sorter[np.searchsorted(mesh.lclNodeIds, mesh.elementNodeIds, sorter=sorter)]
-
-        mesh.lclBoundary = np.where(np.in1d(mesh.lclNodeIds, mesh.boundary))[0]
+        pass
 
     def CalcLocalInfo(self, size, mesh):
         pass
@@ -250,6 +237,22 @@ class SolidMeshPartition(MeshPartition):
         self.elmNodes = 3
         self.elmCommNodes = 2
 
+    def SpecialAssignment(self, mesh):
+        # Assign global info to local directly.
+        mesh.lclNCommNodes = 0
+        
+        mesh.lclNNodes = mesh.nNodes
+        mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
+        mesh.lclNSpecialHead = mesh.lclNBoundary = len(mesh.boundary)
+        mesh.lclNodeIds[:mesh.lclNBoundary] = mesh.boundary
+        lclNodeIds = np.arange(mesh.lclNNodes, dtype=int)
+        mesh.lclNodeIds[mesh.lclNBoundary:] = lclNodeIds[~np.in1d(lclNodeIds, mesh.boundary)]
+
+        sorter = np.argsort(mesh.lclNodeIds)
+        mesh.lclElmNodeIds = sorter[np.searchsorted(mesh.lclNodeIds, mesh.elementNodeIds, sorter=sorter)]
+
+        mesh.lclBoundary = np.where(np.in1d(mesh.lclNodeIds, mesh.boundary))[0]
+
     def CalcLocalInfo(self, size, mesh):
         """ Calculate local node Ids from the partitioning result. """
 
@@ -286,6 +289,25 @@ class FluidMeshPartition(MeshPartition):
         
         self.elmNodes = 4
         self.elmCommNodes = 3
+
+    def SpecialAssignment(self, mesh):
+        # Assign global info to local directly.
+        mesh.lclNCommNodes = 0
+        
+        mesh.lclNNodes = mesh.nNodes
+        mesh.lclNodeIds = np.empty(mesh.lclNNodes, dtype=int)
+        mesh.lclNSpecialHead = mesh.lclNCommNodes
+        mesh.lclNodeIds = np.arange(mesh.lclNNodes, dtype=int)
+
+        mesh.lclElmNodeIds = mesh.elementNodeIds
+
+        mesh.lclInletIndices = mesh.inlet
+        mesh.lclNInlet = len(mesh.lclInletIndices)
+        mesh.lclInletValueIndices = np.arange(mesh.lclNInlet, dtype=int)
+
+        mesh.lclWallIndices = mesh.wall
+
+        mesh.lclBoundary = np.concatenate((mesh.lclInletIndices, mesh.lclWallIndices))
 
     def CalcLocalInfo(self, size, mesh):
         """ Calculate local node Ids from the partitioning result. """

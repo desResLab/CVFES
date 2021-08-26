@@ -292,10 +292,11 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             for i in range(len(self.mesh.colorGroups))]
 
         # Allocate RHS buffer on GPU and the corresponding synchronize buffer on CPU.
-        self.pinned_RHS = cl.Buffer(self.context,
-            mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, 4*nCommNodeBytes)
-        self.RHS, _eventRHS = cl.enqueue_map_buffer(self.queue, self.pinned_RHS,
-            map_flags.WRITE | map_flags.READ, 0, (4, self.lclNCommNodes), lumpLHS.dtype)
+        if self.size > 1:
+            self.pinned_RHS = cl.Buffer(self.context,
+                mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, 4*nCommNodeBytes)
+            self.RHS, _eventRHS = cl.enqueue_map_buffer(self.queue, self.pinned_RHS,
+                map_flags.WRITE | map_flags.READ, 0, (4, self.lclNCommNodes), lumpLHS.dtype)
 
         self.RHS_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, 4*nNodeBytes)
 
@@ -345,25 +346,28 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
                 self.params_buf, self.RHS_buf, wait_for=assemble_RHS_events)
             assemble_RHS_events = [assemble_RHS_event]
 
-        assemble_copy_events = [None] * dof
-        for iCopy in range(dof):
-            assemble_copy_event = cl.enqueue_copy(self.queue, self.RHS[iCopy], self.RHS_buf,
-                device_offset=iCopy*nOffsetBytes, wait_for=assemble_RHS_events)
-            assemble_copy_events[iCopy] = assemble_copy_event
+        # Synch RHS for multiple processors.
+        if self.size > 1:
+            # Copy RHS to CPU for synchronization.
+            assemble_copy_events = [None] * dof
+            for iCopy in range(dof):
+                assemble_copy_event = cl.enqueue_copy(self.queue, self.RHS[iCopy], self.RHS_buf,
+                    device_offset=iCopy*nOffsetBytes, wait_for=assemble_RHS_events)
+                assemble_copy_events[iCopy] = assemble_copy_event
 
-        cl.wait_for_events(assemble_copy_events)
+            cl.wait_for_events(assemble_copy_events)
 
-        # Synchronize the RHS.
-        self.SyncCommNodes(self.RHS)
+            # Synchronize the RHS.
+            self.SyncCommNodes(self.RHS)
 
-        # Copy back the synchronized RHS common parts.
-        sync_copy_events = [None] * dof
-        for iCopy in range(dof):
-            sync_copy_event = cl.enqueue_copy(self.queue, self.RHS_buf, self.RHS[iCopy],
-                device_offset=iCopy*nOffsetBytes)
-            sync_copy_events[iCopy] = sync_copy_event
+            # Copy back the synchronized RHS common parts.
+            sync_copy_events = [None] * dof
+            for iCopy in range(dof):
+                sync_copy_event = cl.enqueue_copy(self.queue, self.RHS_buf, self.RHS[iCopy],
+                    device_offset=iCopy*nOffsetBytes)
+                sync_copy_events[iCopy] = sync_copy_event
 
-        cl.wait_for_events(sync_copy_events)
+            cl.wait_for_events(sync_copy_events)
 
         # Update the du, p for next time step, res=res+RHS/lumpLHS.
         self.preRes_buf, self.res_buf = self.res_buf, self.preRes_buf
