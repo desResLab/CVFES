@@ -397,23 +397,26 @@ class FluidMesh(Mesh):
             outletFace.neighbors = np.empty(len(outletFace.appNodes), dtype=int) # store element id
             outletFace.neighborsNs = np.empty((len(outletFace.appNodes), 4), dtype=float)
             for i,iOutlet in enumerate(outletFace.appNodes):
-                self.calcOneNeighbor(nodes, elmNIds, elmCenters, outletFace, i, iOutlet, c,
-                                     outletFace.neighbors, outletFace.neighborsNs)
-            # Find neighbors' neighbors
-            outletFace.neineighbors = np.empty_like(outletFace.neighbors)
-            outletFace.neineighborsNs = np.empty_like(outletFace.neighborsNs)
-            for i,iOutletNei in enumerate(outletFace.appNodes):
-                self.calcOneNeighbor(nodes, elmNIds, elmCenters, outletFace, i, iOutletNei, 2.0*c,
-                                     outletFace.neineighbors, outletFace.neineighborsNs)
+                neighbor, neighborNs = self.calcOneNeighbor(nodes, 
+                    elmNIds, elmCenters, outletFace, iOutlet, c)
+                outletFace.neighbors[i] = neighbor
+                outletFace.neighborsNs[i,:] = neighborNs
+            # # Find neighbors' neighbors
+            # outletFace.neineighbors = np.empty_like(outletFace.neighbors)
+            # outletFace.neineighborsNs = np.empty_like(outletFace.neighborsNs)
+            # for i,iOutletNei in enumerate(outletFace.appNodes):
+            #     self.calcOneNeighbor(nodes, elmNIds, elmCenters, outletFace, i, iOutletNei, 2.0*c,
+            #                          outletFace.neineighbors, outletFace.neineighborsNs)
                 
 
-    def calcOneNeighbor(self, nodes, elmNIds, elmCenters, outletFace, i, iOutlet, c, neighbors, neighborsNs):
+    # def calcOneNeighbor(self, nodes, elmNIds, elmCenters, outletFace, i, iOutlet, c, neighbors, neighborsNs):
+    def calcOneNeighbor(self, nodes, elmNIds, elmCenters, outletFace, iOutlet, c):
         # The aiming point iOutlet - c*n
         aimP = nodes[iOutlet] - c*outletFace.normal
         # Find where it belong, incidentally, calculate shape function (barycentric coordinates)
         # Find potential list
         distanceList = np.argsort(np.linalg.norm(elmCenters - aimP, axis=1))
-        for iElm in distanceList:
+        for iElm in distanceList[:20]:
             lNIds = elmNIds[iElm]
             # Calculate this elements inverse jacobian
             jCol0 = nodes[lNIds[1]] - nodes[lNIds[0]]
@@ -435,17 +438,29 @@ class FluidMesh(Mesh):
             lDet = jCol0[0]*lCofac[0,0]+jCol1[0]*lCofac[0,1]+jCol2[0]*lCofac[0,2]
             invJ = lCofac.T / lDet
             # Local barycentric coordinates invJ*(x - x0)
-            lBcCoord = np.dot(invJ, aimP-nodes[lNIds[0]])
+            lBcCoord = np.zeros(4)
+            lBcCoord[1:] = np.dot(invJ, aimP-nodes[lNIds[0]])
+            lBcCoord[0] = 1.0 - np.sum(lBcCoord)
 
             if np.all(lBcCoord >= 0.0) and np.all(lBcCoord <= 1.0):
                 
-                neighbors[i] = iElm
-                neighborsNs[i,0] = 1.0 - np.sum(lBcCoord)
-                neighborsNs[i,1:] = lBcCoord
+                # neighbors[i] = iElm
+                # neighborsNs[i,0] = 1.0 - np.sum(lBcCoord)
+                # neighborsNs[i,1:] = lBcCoord
 
-                # print('Find neighbor for {}, {}'.format(iOutlet, iElm))
+                # # print('Find neighbor for {}, {}'.format(iOutlet, iElm))
 
-                break
+                # break
+
+                # neighborNs = np.empty(4) # double
+                # neighborNs[0] = 1.0 - np.sum(lBcCoord)
+                # neighborNs[1:] = lBcCoord
+                
+                # return iElm, neighborNs
+                return iElm, lBcCoord
+
+        print('Failed: Didn\'t find the neighbor\n')
+        exit(-1)
 
 
     # def calcOutletNeighbors(self):
@@ -494,6 +509,57 @@ class FluidMesh(Mesh):
 
     #     pNghb = np.argsort(np.linalg.norm(wNodes - ol, axis=1))[:3]
     #     return pNghb
+
+
+    def PrepLocalOutlet(self, c):
+        """ Calculate outlet's neighbors and neighborNs 
+            for applying non-refelection B.C. under multi-processors.
+        """
+        # TODO:: what if the neighbor is not in local partition?
+        nodes = self.nodes[self.lclNodeIds]
+        elmNIds = self.lclElmNodeIds
+        elmCenters = np.mean(nodes[elmNIds], axis=1)
+
+        lclNodeIds = self.lclNodeIds
+        outlet = self.outlet
+
+        #1. Calculate the length of outlet nodes in local domain first.
+        lclNOutlet = self.lclNOutlet = len(np.where(np.in1d(lclNodeIds, outlet))[0])
+
+        if lclNOutlet == 0:
+            print('Partition {} does not consist face.'.format(self.rank))
+            return
+
+        #2. Determine if local domain consists each outlet face.
+        lclolIdcs = self.lclOutletIndices = np.empty(lclNOutlet, dtype=int)
+        lclOlNghbrs = self.lclOutletNeighbors = np.empty(lclNOutlet, dtype=int)
+        lclOlNghbrsNs = self.lclOutletNeighborsNs = np.empty((4, lclNOutlet))
+        nCounter = 0
+        for outletFace in self.faces['outlet']:
+            
+            faceIndices = np.where(np.in1d(lclNodeIds, outletFace.appNodes))[0]
+            # print(faceIndices.shape[0])
+            
+            if faceIndices.shape[0] == 0:
+                continue
+
+            print('Partition {} consists face.'.format(self.rank))
+
+            lclolIdcs[nCounter:nCounter+faceIndices.shape[0]] = faceIndices
+            for i, iOutlet in enumerate(faceIndices):
+                # Calculate the neighbor and neighborNs for this outlet node.
+                neighbor, neighborNs = self.calcOneNeighbor(nodes, 
+                    elmNIds, elmCenters, outletFace, iOutlet, c)
+                # Store the neighbor information.
+                lclOlNghbrs[nCounter+i] = neighbor
+                lclOlNghbrsNs[:,nCounter+i] = neighborNs
+
+            nCounter += faceIndices.shape[0]
+
+        # print(self.lclNOutlet)
+        # print(lclolIdcs)
+        # print(self.lclOutletNeighbors)
+        # print(lclOlNghbrsNs)
 
 
     def DebugSaveNeighbors(self):

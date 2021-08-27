@@ -322,27 +322,35 @@ __kernel void apply_drchBC(const long nNodes,
 }
 
 
-__kernel void test_memory_layout(const long nRow, const long nColumns,
-    __global double *testMemory)
+__kernel void apply_outletBC(const long nNodes, const long nOutlet,
+    const __global long *outletIndices, const __global long *outletNghbrNodeIds, 
+    const __global double *outletNghbrsNs, const __global double *preDuP, 
+    __global double *duP)
 {
-    uint iElm = get_global_id(0);
+    uint idx = get_global_id(0);
 
-    for (uint i = 0; i < nRow; ++i)
+    const __global long *iNghbrNodeIds = outletNghbrNodeIds + 4 * idx;
+
+    // Only updates z direction, dof 2. TODO:: use normal!
+    double exValue = 0.0; // extrapolation
+    for (uint i = 0; i < 4; ++i)
     {
-        testMemory[i*nColumns+iElm] = i;
+        exValue += outletNghbrsNs[i*nOutlet+idx] * preDuP[2*nNodes+iNghbrNodeIds[i]];
+        // duP[2*nNodes+iNghbrNodeIds[i]] = 7.0;
     }
+
+    duP[2*nNodes+outletIndices[idx]] = exValue;
+    // duP[2*nNodes+outletIndices[idx]] = 13.0;
 }
 
 
+// __kernel void test_memory_layout(const long nRow, const long nColumns,
+//     __global double *testMemory)
+// {
+//     uint iElm = get_global_id(0);
 
-
-
-
-
-
-
-
-
-
-
-
+//     for (uint i = 0; i < nRow; ++i)
+//     {
+//         testMemory[i*nColumns+iElm] = i;
+//     }
+// }

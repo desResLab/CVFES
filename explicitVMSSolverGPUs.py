@@ -66,6 +66,10 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             exit(-1)
 
         self.InitializeParameters(config)
+        
+        # Calculate outlet neighbor infos for non-reflection B.c.s.
+        self.mesh.PrepLocalOutlet(c*self.dt)
+        
         self.InitializeSolver()
 
         # # Debugging.
@@ -315,6 +319,18 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             mem_flags.READ_WRITE | mem_flags.COPY_HOST_PTR,
             hostbuf = self.lclBoundary)
 
+        # Allocate Outlet B.C. memory on CPU & GPU.
+        if self.mesh.lclNOutlet > 0:
+            self.lclOutletIndices_buf = cl.Buffer(self.context,
+                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                hostbuf = self.mesh.lclOutletIndices)
+            self.lclOuletNeighborElmNodeIds_buf = cl.Buffer(self.context,
+                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                hostbuf = self.lclElmNodeIds[self.mesh.lclOutletNeighbors])
+            self.lclOutletNeighborsNs_buf = cl.Buffer(self.context,
+                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                hostbuf = self.mesh.lclOutletNeighborsNs)
+
         # Allocate external force buffer on GPU.
         # TODO:: Update when f is a real function of time and space !!!!!!!
         fs = self.mesh.f * np.ones((3, self.lclNNodes))
@@ -378,6 +394,15 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
 
         # Apply Dirichlet B.C.
         self.ApplyDirichletBCs(t+dt)
+
+        # Apply non-reflection outlet B.C.
+        if self.mesh.lclNOutlet > 0:
+            apply_outletBC_event = self.program.apply_outletBC(self.queue,
+                (self.mesh.lclNOutlet,), (1,), np.int64(self.lclNNodes), 
+                np.int64(self.mesh.lclNOutlet), self.lclOutletIndices_buf,
+                self.lclOuletNeighborElmNodeIds_buf, self.lclOutletNeighborsNs_buf,
+                self.preRes_buf, self.res_buf)
+            apply_outletBC_event.wait()
 
 
     def ApplyDirichletBCs(self, t):
