@@ -534,6 +534,10 @@ class FluidMesh(Mesh):
         lclolIdcs = self.lclOutletIndices = np.empty(lclNOutlet, dtype=int)
         lclOlNghbrs = self.lclOutletNeighbors = np.empty(lclNOutlet, dtype=int)
         lclOlNghbrsNs = self.lclOutletNeighborsNs = np.empty((4, lclNOutlet))
+
+        lclOlNeiNghbrs = self.lclOutletNeiNeighbors = np.empty(lclNOutlet, dtype=int)
+        lclOlNeiNghbrsNs = self.lclOutletNeiNeighborsNs = np.empty((4, lclNOutlet))
+
         nCounter = 0
         for outletFace in self.faces['outlet']:
             
@@ -553,6 +557,13 @@ class FluidMesh(Mesh):
                 # Store the neighbor information.
                 lclOlNghbrs[nCounter+i] = neighbor
                 lclOlNghbrsNs[:,nCounter+i] = neighborNs
+
+                # Calculate the neighbor's neighbor to do the linear extrapolation.
+                neineighbor, neineighborNs = self.calcOneNeighbor(nodes,
+                    elmNIds, elmCenters, outletFace, iOutlet, 0.5*c)
+                # Store the neineighbor's information.
+                lclOlNeiNghbrs[nCounter+i] = neineighbor
+                lclOlNeiNghbrsNs[:,nCounter+i] = neineighborNs
 
             nCounter += faceIndices.shape[0]
 

@@ -321,7 +321,7 @@ __kernel void apply_drchBC(const long nNodes,
     }
 }
 
-
+/* Constant non-reflection outlet B.C. */
 __kernel void apply_outletBC(const long nNodes, const long nOutlet,
     const __global long *outletIndices, const __global long *outletNghbrNodeIds, 
     const __global double *outletNghbrsNs, const __global double *preDuP, 
@@ -343,6 +343,29 @@ __kernel void apply_outletBC(const long nNodes, const long nOutlet,
     // duP[2*nNodes+outletIndices[idx]] = 13.0;
 }
 
+__kernel void apply_linear_outletBC(const long nNodes,
+    const long nOutlet, const __global long *outletIndices,
+    const __global long *outletNghbrNodeIds, const __global double *outletNghbrsNs, 
+    const __global long *outletNeiNghbrNodeIds, const __global double *outletNeiNghbrsNs, 
+    const __global double *preDuP, __global double *duP)
+{
+    uint idx = get_global_id(0);
+
+    const __global long *iNghbrNodeIds = outletNghbrNodeIds + 4 * idx;
+    const __global long *iSndNghbrNodeIds = outletNeiNghbrNodeIds + 4 * idx;
+
+    // Only updates z direction, dof 2. TODO:: use normal!
+    double exValue = 0.0; // extrapolation, first neighbor
+    double sndExValue = 0.0; // second neighbor
+    for (uint i = 0; i < 4; ++i)
+    {
+        exValue += outletNghbrsNs[i*nOutlet+idx] * preDuP[2*nNodes+iNghbrNodeIds[i]];
+        sndExValue += outletNeiNghbrsNs[i*nOutlet+idx] * preDuP[2*nNodes+iSndNghbrNodeIds[i]];
+    }
+
+    // duP[2*nNodes+outletIndices[idx]] = 2.0*exValue - sndExValue;
+    duP[2*nNodes+outletIndices[idx]] = 2.0*sndExValue - exValue;
+}
 
 // __kernel void test_memory_layout(const long nRow, const long nColumns,
 //     __global double *testMemory)

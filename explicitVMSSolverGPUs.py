@@ -324,12 +324,20 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             self.lclOutletIndices_buf = cl.Buffer(self.context,
                 mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
                 hostbuf = self.mesh.lclOutletIndices)
+            
             self.lclOuletNeighborElmNodeIds_buf = cl.Buffer(self.context,
                 mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
                 hostbuf = self.lclElmNodeIds[self.mesh.lclOutletNeighbors])
             self.lclOutletNeighborsNs_buf = cl.Buffer(self.context,
                 mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
                 hostbuf = self.mesh.lclOutletNeighborsNs)
+
+            self.lclOuletNeiNeighborElmNodeIds_buf = cl.Buffer(self.context,
+                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                hostbuf = self.lclElmNodeIds[self.mesh.lclOutletNeiNeighbors])
+            self.lclOutletNeiNeighborsNs_buf = cl.Buffer(self.context,
+                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+                hostbuf = self.mesh.lclOutletNeiNeighborsNs)
 
         # Allocate external force buffer on GPU.
         # TODO:: Update when f is a real function of time and space !!!!!!!
@@ -403,6 +411,14 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
                 self.lclOuletNeighborElmNodeIds_buf, self.lclOutletNeighborsNs_buf,
                 self.preRes_buf, self.res_buf)
             apply_outletBC_event.wait()
+
+            # apply_outletBC_event = self.program.apply_linear_outletBC(self.queue,
+            #     (self.mesh.lclNOutlet,), (1,), np.int64(self.lclNNodes), 
+            #     np.int64(self.mesh.lclNOutlet), self.lclOutletIndices_buf,
+            #     self.lclOuletNeighborElmNodeIds_buf, self.lclOutletNeighborsNs_buf,
+            #     self.lclOuletNeiNeighborElmNodeIds_buf, self.lclOutletNeiNeighborsNs_buf,
+            #     self.preRes_buf, self.res_buf)
+            # apply_outletBC_event.wait()
 
 
     def ApplyDirichletBCs(self, t):
