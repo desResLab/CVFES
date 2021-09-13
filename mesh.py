@@ -84,7 +84,7 @@ class Face:
         self.nElements = polyDataModel.GetNumberOfCells()
         self.elements = np.array([ElementOfFace(polyDataModel.GetCell(i)) for i in range(self.nElements)])
 
-    def adjustNodeIds(self, glbNodeIds, tglbNodeIds):
+    def adjustNodeIds(self, glbNodeIds, tglbNodeIds): # TODO: use argsort
         # nodeIds = np.array([np.where(tglbNodeIds==i)[0] for i in glbNodeIds]).reshape(glbNodeIds.shape)
         nodeIds = []
         for i in glbNodeIds:
@@ -125,7 +125,10 @@ class Mesh:
 
         # Set the initial conditions.
         self.setInitialConditions(eqnConfig.initialConditions)
-        self.setBoundaryCondtions(eqnConfig.boundaryConditions)
+        # self.setBoundaryCondtions(eqnConfig.boundaryConditions)
+
+        # Lid-driven cavity case debugging!
+        self.setLidBoundaryCondtions(eqnConfig.boundaryConditions)
 
     def readMesh(self, config, meshConfig):
 
@@ -225,6 +228,9 @@ class Mesh:
     def setBoundaryCondtions(self, bdyCondConfig):
         pass
 
+    def setLidBoundaryCondtions(self, bdyCondConfig):
+        pass
+
 
 class FluidMesh(Mesh):
 
@@ -243,9 +249,13 @@ class FluidMesh(Mesh):
 
     def processFaces(self):
         nodes = self.nodes
+
+        # If model does not contain outlet, set it to None.
+        if 'outlet' not in self.faces:
+            self.faces['outlet'] = []
         
         # Collect all the inlet and outlet
-        self.wall = np.array([w.glbNodeIds for w in self.faces['wall']]).ravel()
+        self.wall = np.concatenate([w.glbNodeIds for w in self.faces['wall']])
 
         for inletFace in self.faces['inlet']:
             elmNIds = inletFace.elementNodeIds
@@ -351,6 +361,12 @@ class FluidMesh(Mesh):
             inletFace.inletVelocity = inletVelocity[~inletFace.bdyFlags,:].ravel()
         else:
             inletVelocity = (volumeVelocity / inletFace.inletArea) * inletFace.normal
+            inletFace.inletVelocity = (np.ones((len(inletFace.appNodes), 3))*inletVelocity).ravel()
+
+    def setLidBoundaryCondtions(self, bdyCondConfig):
+        """ Special setup for lid-driven cavity case. """
+        inletVelocity = np.array([1.0, 0.0, 0.0])
+        for inletFace in self.faces['inlet']:
             inletFace.inletVelocity = (np.ones((len(inletFace.appNodes), 3))*inletVelocity).ravel()
 
     def calcInscribeDiameters(self):

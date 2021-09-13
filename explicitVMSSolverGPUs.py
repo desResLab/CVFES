@@ -39,7 +39,8 @@ DOUBLE_NBYTES = 8
 c1 = 4.0
 c2 = 2.0
 # c = 5.0*(11.7**2.0)
-c = 5.0*11.7
+# c = 5.0*11.7 # cylinder
+c = 5.0 # lid-driven cavity
 
 vDof = 3
 pDof = 1
@@ -67,8 +68,8 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
 
         self.InitializeParameters(config)
         
-        # Calculate outlet neighbor infos for non-reflection B.c.s.
-        self.mesh.PrepLocalOutlet(c*self.dt)
+        # # Calculate outlet neighbor infos for non-reflection B.c.s.
+        # self.mesh.PrepLocalOutlet(c*self.dt)
         
         self.InitializeSolver()
 
@@ -319,25 +320,25 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             mem_flags.READ_WRITE | mem_flags.COPY_HOST_PTR,
             hostbuf = self.lclBoundary)
 
-        # Allocate Outlet B.C. memory on CPU & GPU.
-        if self.mesh.lclNOutlet > 0:
-            self.lclOutletIndices_buf = cl.Buffer(self.context,
-                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
-                hostbuf = self.mesh.lclOutletIndices)
+        # # Allocate Outlet B.C. memory on CPU & GPU.
+        # if self.mesh.lclNOutlet > 0:
+        #     self.lclOutletIndices_buf = cl.Buffer(self.context,
+        #         mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+        #         hostbuf = self.mesh.lclOutletIndices)
             
-            self.lclOuletNeighborElmNodeIds_buf = cl.Buffer(self.context,
-                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
-                hostbuf = self.lclElmNodeIds[self.mesh.lclOutletNeighbors])
-            self.lclOutletNeighborsNs_buf = cl.Buffer(self.context,
-                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
-                hostbuf = self.mesh.lclOutletNeighborsNs)
+        #     self.lclOuletNeighborElmNodeIds_buf = cl.Buffer(self.context,
+        #         mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+        #         hostbuf = self.lclElmNodeIds[self.mesh.lclOutletNeighbors])
+        #     self.lclOutletNeighborsNs_buf = cl.Buffer(self.context,
+        #         mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+        #         hostbuf = self.mesh.lclOutletNeighborsNs)
 
-            self.lclOuletNeiNeighborElmNodeIds_buf = cl.Buffer(self.context,
-                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
-                hostbuf = self.lclElmNodeIds[self.mesh.lclOutletNeiNeighbors])
-            self.lclOutletNeiNeighborsNs_buf = cl.Buffer(self.context,
-                mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
-                hostbuf = self.mesh.lclOutletNeiNeighborsNs)
+        #     self.lclOuletNeiNeighborElmNodeIds_buf = cl.Buffer(self.context,
+        #         mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+        #         hostbuf = self.lclElmNodeIds[self.mesh.lclOutletNeiNeighbors])
+        #     self.lclOutletNeiNeighborsNs_buf = cl.Buffer(self.context,
+        #         mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+        #         hostbuf = self.mesh.lclOutletNeiNeighborsNs)
 
         # Allocate external force buffer on GPU.
         # TODO:: Update when f is a real function of time and space !!!!!!!
@@ -349,6 +350,9 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
         self.params_buf = cl.Buffer(self.context,
             mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
             hostbuf = self.coefs)
+
+        # Lid-driven cavity case debugging.
+        self.ApplyLidDirichletBCs()
 
 
     def Solve(self, t, dt):
@@ -401,24 +405,25 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             self.preRes_buf, self.res_buf)
 
         # Apply Dirichlet B.C.
-        self.ApplyDirichletBCs(t+dt)
+        # self.ApplyDirichletBCs(t+dt)
+        self.ApplyLidDirichletBCs() # lid-driven cavity
 
-        # Apply non-reflection outlet B.C.
-        if self.mesh.lclNOutlet > 0:
-            apply_outletBC_event = self.program.apply_outletBC(self.queue,
-                (self.mesh.lclNOutlet,), (1,), np.int64(self.lclNNodes), 
-                np.int64(self.mesh.lclNOutlet), self.lclOutletIndices_buf,
-                self.lclOuletNeighborElmNodeIds_buf, self.lclOutletNeighborsNs_buf,
-                self.preRes_buf, self.res_buf)
-            apply_outletBC_event.wait()
+        # # Apply non-reflection outlet B.C.
+        # if self.mesh.lclNOutlet > 0:
+        #     apply_outletBC_event = self.program.apply_outletBC(self.queue,
+        #         (self.mesh.lclNOutlet,), (1,), np.int64(self.lclNNodes), 
+        #         np.int64(self.mesh.lclNOutlet), self.lclOutletIndices_buf,
+        #         self.lclOuletNeighborElmNodeIds_buf, self.lclOutletNeighborsNs_buf,
+        #         self.preRes_buf, self.res_buf)
+        #     apply_outletBC_event.wait()
 
-            # apply_outletBC_event = self.program.apply_linear_outletBC(self.queue,
-            #     (self.mesh.lclNOutlet,), (1,), np.int64(self.lclNNodes), 
-            #     np.int64(self.mesh.lclNOutlet), self.lclOutletIndices_buf,
-            #     self.lclOuletNeighborElmNodeIds_buf, self.lclOutletNeighborsNs_buf,
-            #     self.lclOuletNeiNeighborElmNodeIds_buf, self.lclOutletNeiNeighborsNs_buf,
-            #     self.preRes_buf, self.res_buf)
-            # apply_outletBC_event.wait()
+        #     # apply_outletBC_event = self.program.apply_linear_outletBC(self.queue,
+        #     #     (self.mesh.lclNOutlet,), (1,), np.int64(self.lclNNodes), 
+        #     #     np.int64(self.mesh.lclNOutlet), self.lclOutletIndices_buf,
+        #     #     self.lclOuletNeighborElmNodeIds_buf, self.lclOutletNeighborsNs_buf,
+        #     #     self.lclOuletNeiNeighborElmNodeIds_buf, self.lclOutletNeiNeighborsNs_buf,
+        #     #     self.preRes_buf, self.res_buf)
+        #     # apply_outletBC_event.wait()
 
 
     def ApplyDirichletBCs(self, t):
@@ -446,6 +451,38 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
                     n = math.pi/self.constant_T
                     inletDrchValues[nCount:nCount+len(inlet.appNodes)*vDof] = a - b*math.cos(n*t)
                     nCount = nCount + len(inlet.appNodes)*vDof
+
+            # Assign to pinned_memory on CPU.
+            self.drchBCValue[:,:] = inletDrchValues.reshape((nInlet, vDof))[lclInletValueIndices].T
+            # Copy to GPU.
+            update_drchBC_events = [None] * vDof
+            for iCopy in range(vDof):
+                update_drchBC_event = cl.enqueue_copy(self.queue,
+                    self.drchBCValue_buf, self.drchBCValue[iCopy], device_offset=iCopy*nBdyNodeBytes)
+                update_drchBC_events[iCopy] = update_drchBC_event
+
+        apply_drchBC_event = self.program.apply_drchBC(self.queue,
+            (len(self.lclBoundary),), (1,), np.int64(self.lclNNodes),
+            self.drchBCValue_buf, self.drchBCIndices_buf, self.res_buf, wait_for=update_drchBC_events)
+
+        apply_drchBC_event.wait()
+
+
+    def ApplyLidDirichletBCs(self):
+        # Prepare bytes.
+        nBdyNodeBytes = 8 * len(self.lclBoundary)
+        # Remeber variables.
+        lclInletValueIndices = self.mesh.lclInletValueIndices
+        nInlet = len(self.mesh.inlet)
+
+        update_drchBC_events = None
+
+        if self.mesh.lclNInlet > 0:
+            inletDrchValues = np.empty(vDof*nInlet)
+            nCount = 0
+            for inlet in self.mesh.faces['inlet']:
+                inletDrchValues[nCount:nCount+len(inlet.appNodes)*vDof] = inlet.inletVelocity
+                nCount = nCount + len(inlet.appNodes)*vDof
 
             # Assign to pinned_memory on CPU.
             self.drchBCValue[:,:] = inletDrchValues.reshape((nInlet, vDof))[lclInletValueIndices].T
