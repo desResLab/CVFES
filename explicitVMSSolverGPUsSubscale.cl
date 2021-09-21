@@ -127,8 +127,9 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
     const __global long *elmNodeIds, const __global double *fs,
     const __global double *volumes, const __global double *DNs,
     const __global double *duP, const __global double *preDuP,
-    const __global double *sdus, const __global double *params,
-    __global double *RHS)
+    const __global double *params, const __global double *hs,
+    // const __global double *lMs, 
+    __global double *sdus, __global double *RHS)
 {
     uint iElm = get_global_id(0);
 
@@ -156,8 +157,23 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
     double lRes[4][4];
 
     // parameters
+    double c1 = params[0];
+    double c2 = params[1];
     double nu = params[2];
+    double dt = params[3];
     double invEpsilon = params[4];
+
+    // inscribe diameter for current element
+    double insDiameter = hs[iElm];
+    double du[4][3]; // 4*3
+    double p[4];
+    double c_ha[4][3];
+    double gradDu[3][3];
+    double gradP[3];
+    double tau_u = 0.0;
+
+    double lNsdu[4][3];
+    double lM[4];
 
     // Memory clear first.
     for (uint i = 0; i < 4; ++i)
@@ -178,12 +194,22 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
         for (uint j = 0; j < 3; ++j)
         {
             sdu[i][j] = sdus[(i*3+j)*nElms+iElm];
+            du[i][j] = duP[j*nNodes+nodeIds[i]];
             f[i][j] = fs[j*nNodes+nodeIds[i]];
             
-            hdu[i][j] = 1.5*duP[j*nNodes+nodeIds[i]] - 0.5*preDuP[j*nNodes+nodeIds[i]];
+            // hdu[i][j] = 1.5*duP[j*nNodes+nodeIds[i]] - 0.5*preDuP[j*nNodes+nodeIds[i]];
+            hdu[i][j] = 1.5*du[i][j] - 0.5*preDuP[j*nNodes+nodeIds[i]];
             ha[i][j] = hdu[i][j] + sdu[i][j];
+            c_ha[i][j] = du[i][j] + sdu[i][j];
+
+            lNsdu[i][j] = 0.0;
         }
-        hp[i] = 1.5*duP[3*nNodes+nodeIds[i]] - 0.5*preDuP[3*nNodes+nodeIds[i]];
+        
+        p[i] = duP[3*nNodes+nodeIds[i]];
+        // hp[i] = 1.5*duP[3*nNodes+nodeIds[i]] - 0.5*preDuP[3*nNodes+nodeIds[i]];
+        hp[i] = 1.5*p[i] - 0.5*preDuP[3*nNodes+nodeIds[i]];
+
+        lM[i] = 0.0;
     }
 
     Ve = volumes[iElm];
@@ -202,9 +228,14 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
         {
             gradHdu[i][j] = DN[j][0]*hdu[0][i] + DN[j][1]*hdu[1][i] \
                           + DN[j][2]*hdu[2][i] + DN[j][3]*hdu[3][i];
+
+            gradDu[i][j] = DN[j][0]*du[0][i] + DN[j][1]*du[1][i] \
+                          + DN[j][2]*du[2][i] + DN[j][3]*du[3][i];
         }
 
         trGradHdu += gradHdu[i][i];
+
+        gradP[i] = DN[i][0]*p[0] + DN[i][1]*p[1] + DN[i][2]*p[2] + DN[i][3]*p[3];
     }
 
     // Loop through Gaussian points to do numerical integration.
@@ -270,10 +301,17 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
                             - fh[i]*lN[iGp][a]);
                 
                 // lRes[a][i] += wGp*ahGradHu[i]*lN[iGp][a];
+
+                // Assemble to the RHS of next time step subscale.
+                lNsdu[a][i] += wGp*(gradDu[i][0]*hah[0] + gradDu[i][1]*hah[1] \
+                    + gradDu[i][2]*hah[2] + gradP[i])*lN[iGp][a];
             }
 
             // Assemble last d.o.f. for pressure.
             lRes[a][3] += wGp*(trGradHdu*lN[iGp][a] - sduhDN)*invEpsilon;
+
+            // Assemble LHS of elemental lumped mass matrix.
+            lM[a] += wGp*lN[iGp][a];
         }
     }
 
@@ -283,6 +321,34 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
         for (uint i = 0; i < 4; ++i)
         {
             RHS[i*nNodes+nodeIds[a]] += lRes[a][i];
+        }
+    }
+
+    // Update the subscale values.
+    // Loop through each node of the tetrahedron.
+    for (uint a = 0; a < 4; ++a)
+    {
+        tau_u = fmax(tau_u, sqrt(c_ha[a][0]*c_ha[a][0] \
+            + c_ha[a][1]*c_ha[a][1] + c_ha[a][2]*c_ha[a][2]));
+    }
+    tau_u = c1*nu/(insDiameter*insDiameter) + c2*tau_u/insDiameter;
+    tau_u = 1.0/(1.0/dt + tau_u);
+
+    for (uint a = 0; a < 4; ++a)
+    {
+        // tau_u = sqrt(c_ha[a][0]*c_ha[a][0] + c_ha[a][1]*c_ha[a][1] + c_ha[a][2]*c_ha[a][2]);
+        // tau_u = c1*nu/(insDiameter*insDiameter) + c2*tau_u/insDiameter;
+        // tau_u = 1.0/(1.0/dt + tau_u);
+        
+        for (uint i = 0; i < 3; ++i)
+        {
+            // sdus[(a*3+i)*nElms+iElm] = tau_u*(sdu[a][i]/dt \
+            //     - gradDu[i][0]*c_ha[a][0] - gradDu[i][1]*c_ha[a][1] \
+            //     - gradDu[i][2]*c_ha[a][2] - gradP[i]);
+
+            sdus[(a*3+i)*nElms+iElm] = tau_u*(sdu[a][i]/dt \
+                - gradDu[i][0]*ha[a][0] - gradDu[i][1]*ha[a][1] \
+                - gradDu[i][2]*ha[a][2] - gradP[i] + lNsdu[a][i]/lM[a]);
         }
     }
 }

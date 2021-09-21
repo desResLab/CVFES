@@ -40,7 +40,7 @@ c1 = 4.0
 c2 = 2.0
 # c = 5.0*(11.7**2.0)
 # c = 5.0*11.7 # cylinder
-c = 5.0 # lid-driven cavity
+c = 2.0 # lid-driven cavity
 
 vDof = 3
 pDof = 1
@@ -67,7 +67,9 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             exit(-1)
 
         self.InitializeParameters(config)
-        
+
+        # Diameters of inscribed sphere of tetrohedron
+        self.mesh.calcInscribeDiameters()
         # # Calculate outlet neighbor infos for non-reflection B.c.s.
         # self.mesh.PrepLocalOutlet(c*self.dt)
         
@@ -147,7 +149,8 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
         self.num_groups = math.ceil(dof * self.lclNNodes / self.localWorkSize)
 
         # Read and build the kernel.
-        kernelsource = open("explicitVMSSolverGPUs.cl").read()
+        # kernelsource = open("explicitVMSSolverGPUs.cl").read()
+        kernelsource = open("explicitVMSSolverGPUsSubscale.cl").read()
         self.program = cl.Program(self.context, kernelsource).build()
 
         return 0
@@ -194,10 +197,10 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, 
             hostbuf = self.mesh.lclElmNodeIds[self.mesh.colorGroups[i]]) 
             for i in range(len(self.mesh.colorGroups))]
-        # lN, lDN copy to GPU.
-        self.lDN_buf = cl.Buffer(self.context,
-            mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
-            hostbuf = self.lDN)
+        # # lN, lDN copy to GPU.
+        # self.lDN_buf = cl.Buffer(self.context,
+        #     mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
+        #     hostbuf = self.lDN)
 
         # # Another way.
         # nodes = np.copy(self.mesh.nodes[self.mesh.lclNodeIds].T)
@@ -350,6 +353,11 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
         self.params_buf = cl.Buffer(self.context,
             mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR,
             hostbuf = self.coefs)
+        # Copy the h to GPU w.r.t. color groups.
+        self.hs_buf = [cl.Buffer(self.context, 
+            mem_flags.READ_ONLY | mem_flags.COPY_HOST_PTR, 
+            hostbuf = self.mesh.inscribeDiameters[self.mesh.colorGroups[i]]) 
+            for i in range(len(self.mesh.colorGroups))]
 
         # Lid-driven cavity case debugging.
         self.ApplyLidDirichletBCs()
@@ -370,8 +378,9 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
                 (nElms,), (1,), np.int64(nElms), np.int64(self.lclNNodes), 
                 self.colorGps_buf[iColorGroup], self.fs_buf,
                 self.volumes_buf[iColorGroup], self.DNs_buf[iColorGroup],
-                self.res_buf, self.preRes_buf, self.sdu_buf[iColorGroup],
-                self.params_buf, self.RHS_buf, wait_for=assemble_RHS_events)
+                self.res_buf, self.preRes_buf, self.params_buf, 
+                self.hs_buf[iColorGroup], self.sdu_buf[iColorGroup], self.RHS_buf, 
+                wait_for=assemble_RHS_events)
             assemble_RHS_events = [assemble_RHS_event]
 
         # Synch RHS for multiple processors.
