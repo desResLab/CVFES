@@ -123,13 +123,14 @@ __kernel void initial_assemble(const long nElms, const long nNodes,
 }
 
 
+/* sdus: (4, 3, nElms) velocity subscales evaluated at integration point of each element
+ */
 __kernel void assemble_RHS(const long nElms, const long nNodes,
     const __global long *elmNodeIds, const __global double *fs,
     const __global double *volumes, const __global double *DNs,
     const __global double *duP, const __global double *preDuP,
-    const __global double *params, const __global double *hs,
-    // const __global double *lMs, 
-    __global double *sdus, __global double *RHS)
+    const __global double *params, const __global double *sdus, 
+    __global double *RHS)
 {
     uint iElm = get_global_id(0);
 
@@ -141,13 +142,12 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
     double sdu[4][3];
     double hdu[4][3]; // 4*3
     double hp[4];
-    double ha[4][3];
     double gradHdu[3][3]; // 3*3
 
+    // values at Gaussian integration points
     double wGp;
-    double hah[3];
+    double hah[4][3];
     double hph;
-    double sduh[3];
     double fh[3];
 
     double trGradHdu = 0.0;
@@ -163,22 +163,11 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
     double dt = params[3];
     double invEpsilon = params[4];
 
-    // inscribe diameter for current element
-    double insDiameter = hs[iElm];
-    double du[4][3]; // 4*3
-    double p[4];
-    double c_ha[4][3];
-    double gradDu[3][3];
-    double gradP[3];
-    double tau_u = 0.0;
-
-    double lNsdu[4][3];
-    double lM[4];
 
     // Memory clear first.
-    for (uint i = 0; i < 4; ++i)
+    for (uint i = 0; i < 4; ++i) // node
     {
-        for (uint j = 0; j < 4; ++j)
+        for (uint j = 0; j < 4; ++j) // d.o.f.
         {
             lRes[i][j] = 0.0;
         }
@@ -193,23 +182,13 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
         // Calculate initial values.
         for (uint j = 0; j < 3; ++j)
         {
-            sdu[i][j] = sdus[(i*3+j)*nElms+iElm];
-            du[i][j] = duP[j*nNodes+nodeIds[i]];
             f[i][j] = fs[j*nNodes+nodeIds[i]];
+            hdu[i][j] = 1.5*duP[j*nNodes+nodeIds[i]] - 0.5*preDuP[j*nNodes+nodeIds[i]];
             
-            // hdu[i][j] = 1.5*duP[j*nNodes+nodeIds[i]] - 0.5*preDuP[j*nNodes+nodeIds[i]];
-            hdu[i][j] = 1.5*du[i][j] - 0.5*preDuP[j*nNodes+nodeIds[i]];
-            ha[i][j] = hdu[i][j] + sdu[i][j];
-            c_ha[i][j] = du[i][j] + sdu[i][j];
-
-            lNsdu[i][j] = 0.0;
+            sdu[i][j] = sdus[(i*3+j)*nElms+iElm];
         }
         
-        p[i] = duP[3*nNodes+nodeIds[i]];
-        // hp[i] = 1.5*duP[3*nNodes+nodeIds[i]] - 0.5*preDuP[3*nNodes+nodeIds[i]];
-        hp[i] = 1.5*p[i] - 0.5*preDuP[3*nNodes+nodeIds[i]];
-
-        lM[i] = 0.0;
+        hp[i] = 1.5*duP[3*nNodes+nodeIds[i]] - 0.5*preDuP[3*nNodes+nodeIds[i]];
     }
 
     Ve = volumes[iElm];
@@ -228,14 +207,9 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
         {
             gradHdu[i][j] = DN[j][0]*hdu[0][i] + DN[j][1]*hdu[1][i] \
                           + DN[j][2]*hdu[2][i] + DN[j][3]*hdu[3][i];
-
-            gradDu[i][j] = DN[j][0]*du[0][i] + DN[j][1]*du[1][i] \
-                          + DN[j][2]*du[2][i] + DN[j][3]*du[3][i];
         }
 
         trGradHdu += gradHdu[i][i];
-
-        gradP[i] = DN[i][0]*p[0] + DN[i][1]*p[1] + DN[i][2]*p[2] + DN[i][3]*p[3];
     }
 
     // Loop through Gaussian points to do numerical integration.
@@ -246,16 +220,16 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
         // Calculate values at Gaussian point iGp.
         for (uint i = 0; i < 3; ++i)
         {
-            hah[i] = 0.0;
-            sduh[i] = 0.0;
+            hah[iGp][i] = 0.0;
             fh[i] = 0.0;
 
             for (uint j = 0; j < 4; ++j)
             {
-                hah[i] += ha[j][i] * lN[iGp][j];
-                sduh[i] += sdu[j][i] * lN[iGp][j];
+                hah[iGp][i] += hdu[j][i] * lN[iGp][j];
                 fh[i] += f[j][i] * lN[iGp][j];
             }
+
+            hah[iGp][i] += sdu[iGp][i];
         }
 
         hph = 0.0;
@@ -271,10 +245,9 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
 
             for (uint j = 0; j < 3; ++j)
             {
-                ahGradHu[i] += gradHdu[i][j] * hah[j];
+                ahGradHu[i] += gradHdu[i][j] * hah[iGp][j];
             }
         }
-
 
         // Assemble for each point.
         for (uint a = 0; a < 4; ++a)
@@ -284,8 +257,8 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
             sduhDN = 0.0;
             for (uint i = 0; i < 3; ++i)
             {
-                ahDN += hah[i] * DN[i][a];
-                sduhDN += sduh[i] * DN[i][a];
+                ahDN += hah[iGp][i] * DN[i][a];
+                sduhDN += sdu[iGp][i] * DN[i][a];
             }
             
             // Assemble first 3 d.o.f.s.
@@ -293,25 +266,17 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
             {
                 for (uint j = 0; j < 3; ++j)
                 {
-                    lRes[a][i] += wGp*nu*(gradHdu[i][j]+gradHdu[i][j])*DN[j][a];
+                    // lRes[a][i] += wGp*nu*(gradHdu[i][j]+gradHdu[j][i])*DN[j][a];
+                    lRes[a][i] += wGp*nu*(gradHdu[i][j])*DN[j][a];
                 }
 
                 lRes[a][i] += wGp*(ahGradHu[i]*lN[iGp][a] \
-                            - hph*DN[i][a] - sduh[i]*ahDN \
+                            - hph*DN[i][a] - sdu[iGp][i]*ahDN \
                             - fh[i]*lN[iGp][a]);
-                
-                // lRes[a][i] += wGp*ahGradHu[i]*lN[iGp][a];
-
-                // Assemble to the RHS of next time step subscale.
-                lNsdu[a][i] += wGp*(gradDu[i][0]*hah[0] + gradDu[i][1]*hah[1] \
-                    + gradDu[i][2]*hah[2] + gradP[i])*lN[iGp][a];
             }
 
             // Assemble last d.o.f. for pressure.
             lRes[a][3] += wGp*(trGradHdu*lN[iGp][a] - sduhDN)*invEpsilon;
-
-            // Assemble LHS of elemental lumped mass matrix.
-            lM[a] += wGp*lN[iGp][a];
         }
     }
 
@@ -321,34 +286,6 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
         for (uint i = 0; i < 4; ++i)
         {
             RHS[i*nNodes+nodeIds[a]] += lRes[a][i];
-        }
-    }
-
-    // Update the subscale values.
-    // Loop through each node of the tetrahedron.
-    for (uint a = 0; a < 4; ++a)
-    {
-        tau_u = fmax(tau_u, sqrt(c_ha[a][0]*c_ha[a][0] \
-            + c_ha[a][1]*c_ha[a][1] + c_ha[a][2]*c_ha[a][2]));
-    }
-    tau_u = c1*nu/(insDiameter*insDiameter) + c2*tau_u/insDiameter;
-    tau_u = 1.0/(1.0/dt + tau_u);
-
-    for (uint a = 0; a < 4; ++a)
-    {
-        // tau_u = sqrt(c_ha[a][0]*c_ha[a][0] + c_ha[a][1]*c_ha[a][1] + c_ha[a][2]*c_ha[a][2]);
-        // tau_u = c1*nu/(insDiameter*insDiameter) + c2*tau_u/insDiameter;
-        // tau_u = 1.0/(1.0/dt + tau_u);
-        
-        for (uint i = 0; i < 3; ++i)
-        {
-            // sdus[(a*3+i)*nElms+iElm] = tau_u*(sdu[a][i]/dt \
-            //     - gradDu[i][0]*c_ha[a][0] - gradDu[i][1]*c_ha[a][1] \
-            //     - gradDu[i][2]*c_ha[a][2] - gradP[i]);
-
-            sdus[(a*3+i)*nElms+iElm] = tau_u*(sdu[a][i]/dt \
-                - gradDu[i][0]*ha[a][0] - gradDu[i][1]*ha[a][1] \
-                - gradDu[i][2]*ha[a][2] - gradP[i] + lNsdu[a][i]/lM[a]);
         }
     }
 }
@@ -369,6 +306,204 @@ __kernel void calc_res(const long nGrps, const long ndof, const double dt,
         if (idx < ndof)
         {
             duP[idx] = preDuP[idx] - dt * RHS[idx] / lumpLHS[idx];
+        }
+    }
+}
+
+
+/* Assemble the projection RHS.
+ * elmTaus: (nELms, 1) store each element's tau, update at each time step
+ * projRHS: (3*nNodes, 1) global RHS of projection calculation, needs sync
+ * sdus: (4, 3, nElms) velocity subscales evaluated at integration point of each element
+ */
+__kernel void assemble_projRes(const long nElms, const long nNodes,
+    const __global long *elmNodeIds, const __global double *volumes, 
+    const __global double *DNs, const __global double *params, 
+    const __global double *duP, const __global double *preDuP, 
+    const __global double *hs, __global double *elmTaus, 
+    __global double *sdus, __global double *projRHS)
+{
+    uint iElm = get_global_id(0);
+
+    long nodeIds[4];
+    double Ve;
+    double DN[3][4]; // 3*4
+    
+    double sdu[4][3];
+    double hdu[4][3]; // 4*3
+    double hp[4];
+
+    double du[4][3]; // 4*3
+    double p[4];
+    double gradDu[3][3];
+    double gradP[3];
+
+    // values at Gaussian integration points
+    double wGp;
+    double hah[3];
+    double ahGradDu[3];
+
+    double projL[4][3];
+    double maxA = 0.0;
+
+    // parameters
+    double c1 = params[0];
+    double c2 = params[1];
+    double nu = params[2];
+    double dt = params[3];
+    // double invEpsilon = params[4];
+
+    // inscribe diameter for current element
+    double insDiameter = hs[iElm];
+
+
+    // Remember element's nodeIds.
+    for (uint i = 0; i < 4; ++i)
+    {
+        // nodeIds[i] = elmNodeIds[i*nElms+iElm];
+        nodeIds[i] = elmNodeIds[iElm*4+i];
+
+        // Calculate initial values.
+        for (uint j = 0; j < 3; ++j)
+        {
+            du[i][j] = duP[j*nNodes+nodeIds[i]];
+            hdu[i][j] = 1.5*du[i][j] - 0.5*preDuP[j*nNodes+nodeIds[i]];
+            
+            sdu[i][j] = sdus[(i*3+j)*nElms+iElm];
+            projL[i][j] = 0.0;
+        }
+        
+        p[i] = duP[3*nNodes+nodeIds[i]];
+    }
+
+    Ve = volumes[iElm];
+    for (uint i = 0; i < 3; ++i)
+    {
+        for (uint j = 0; j < 4; ++j)
+        {
+            DN[i][j] = DNs[(i*4+j)*nElms+iElm];
+        }
+    }
+
+    // Calculate elemental values.
+    for (uint i = 0; i < 3; ++i) // partial u_x, u_y, u_z
+    {
+        for (uint j = 0; j < 3; ++j) // partial x, y, z
+        {
+            gradDu[i][j] = DN[j][0]*du[0][i] + DN[j][1]*du[1][i] \
+                          + DN[j][2]*du[2][i] + DN[j][3]*du[3][i];
+        }
+
+        gradP[i] = DN[i][0]*p[0] + DN[i][1]*p[1] + DN[i][2]*p[2] + DN[i][3]*p[3];
+    }
+
+    // Loop through Gaussian points to do numerical integration.
+    for (uint iGp = 0; iGp < 4; ++iGp)
+    {
+        wGp = w[iGp] * Ve;
+
+        // Convection a at Gaussian point iGp.
+        for (uint i = 0; i < 3; ++i)
+        {
+            hah[i] = hdu[0][i]*lN[iGp][0] + hdu[1][i]*lN[iGp][1] \
+                    + hdu[2][i]*lN[iGp][2] + hdu[3][i]*lN[iGp][3] \
+                    + sdu[iGp][i];
+        }
+
+        maxA = fmax(maxA, sqrt(hah[0]*hah[0]+hah[1]*hah[1]+hah[2]*hah[2]));
+
+        // hah dot gradDu
+        for (uint i = 0; i < 3; ++i)
+        {
+            ahGradDu[i] = gradDu[i][0]*hah[0] + gradDu[i][1]*hah[1] \
+                        + gradDu[i][2]*hah[2];
+        }
+
+        // Update subscale (I).
+        for (uint i = 0; i < 3; ++i)
+        {
+            sdus[(iGp*3+i)*nElms+iElm] = sdu[iGp][i]/dt - ahGradDu[i] - gradP[i];
+        }
+
+        // Assemble to local residual.
+        for (uint a = 0; a < 4; ++a)
+        {
+            for (uint i = 0; i < 3; ++i)
+            {
+                projL[a][i] += wGp*ahGradDu[i]*lN[iGp][a];
+            }
+        }
+    }
+
+    // Assemble to global projection RHS.
+    // Update the projection for pressure gradient component.
+    for (uint a = 0; a < 4; ++a)
+    {
+        for (uint i = 0; i < 3; ++i)
+        {
+            projRHS[i*nNodes+nodeIds[a]] += projL[a][i] + gradP[i]*Ve*0.25;
+        }
+    }
+
+    // Calculate the elemental tau value.
+    maxA = c1*nu/(insDiameter*insDiameter) + c2*maxA/insDiameter;
+    elmTaus[iElm] = 1.0/(1.0/dt + maxA);
+}
+
+
+__kernel void calc_projection(const long nGrps, const long vdof, 
+    const __global double *lumpLHS, __global double *projRes)
+{
+    uint lclSize = get_local_size(0);
+    uint j = get_local_id(0);
+    uint idx;
+
+    for (uint i = get_group_id(0); i < nGrps; i += get_num_groups(0))
+    {
+        idx = i * lclSize + j;
+        
+        if (idx < vdof)
+        {
+            projRes[idx] = projRes[idx] / lumpLHS[idx];
+        }
+    }
+}
+
+
+/* Update the velocity subscale.
+ */
+__kernel void update_subscales(const long nElms, const long nNodes,
+    const __global long *elmNodeIds, const __global double *elmTaus,
+    const __global double *projRes, __global double *sdus)
+{
+    uint iElm = get_global_id(0);
+
+    long nodeIds[4];
+    double projL[4][3];
+    double projIGp;
+    double tau = elmTaus[iElm];
+
+    // Remember element's nodeIds.
+    for (uint i = 0; i < 4; ++i)
+    {
+        // nodeIds[i] = elmNodeIds[i*nElms+iElm];
+        nodeIds[i] = elmNodeIds[iElm*4+i];
+
+        // Readin projection values at vertices.
+        for (uint j = 0; j < 3; ++j)
+        {
+            projL[i][j] = projRes[j*nNodes+nodeIds[i]];
+        }
+    }
+
+    for (uint iGp = 0; iGp < 4; ++iGp)
+    {
+        for (uint i = 0; i < 3; ++i)
+        {
+            projIGp = projL[0][i]*lN[iGp][0] + projL[1][i]*lN[iGp][1] \
+                    + projL[2][i]*lN[iGp][2] + projL[3][i]*lN[iGp][3];
+            
+            sdus[(iGp*3+i)*nElms+iElm] = (sdus[(iGp*3+i)*nElms+iElm] + projIGp)*tau;
         }
     }
 }

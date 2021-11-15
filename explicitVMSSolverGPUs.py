@@ -147,10 +147,12 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
         print('gpu {} num of computing unites {}'.format(self.rank, self.num_compute_units))
         # calculating assignment
         self.num_groups = math.ceil(dof * self.lclNNodes / self.localWorkSize)
+        self.num_groups_vDof = math.ceil(vDof * self.lclNNodes / self.localWorkSize)
 
         # Read and build the kernel.
         # kernelsource = open("explicitVMSSolverGPUs.cl").read()
         kernelsource = open("explicitVMSSolverGPUsSubscale.cl").read()
+        # kernelsource = open("explicitVMSSolverGPUsPSubscale.cl").read()
         self.program = cl.Program(self.context, kernelsource).build()
 
         return 0
@@ -308,6 +310,19 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
 
         self.RHS_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, 4*nNodeBytes)
 
+        # Allocate the projection RHS/result buffer on GPU 
+        #   and the corresponding synchronize buffer on CPU.
+        if self.size > 1:
+            self.pinned_projRes = cl.Buffer(self.context,
+                mem_flags.READ_WRITE | mem_flags.ALLOC_HOST_PTR, 3*nCommNodeBytes)
+            self.projRes, _eventProjRes = cl.enqueue_map_buffer(self.queue, 
+                self.pinned_projRes, map_flags.WRITE | map_flags.READ, 
+                0, (3, self.lclNCommNodes), lumpLHS.dtype)
+
+        self.projRes_buf = cl.Buffer(self.context, mem_flags.READ_WRITE, 3*nNodeBytes)
+        self.elmTaus_buf = [cl.Buffer(self.context, mem_flags.READ_WRITE, 
+            8*len(self.mesh.colorGroups[i])) for i in range(len(self.mesh.colorGroups))]
+
         # Allocate Dirichlet B.C. memory on CPU & GPU.
         if self.mesh.lclNInlet > 0:
             self.pinned_drchBCValue = cl.Buffer(self.context,
@@ -366,8 +381,70 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
     def Solve(self, t, dt):
 
         # Memory size calculation.
+        nNodeBytes = 8 * self.lclNNodes # double each node
         nOffsetBytes = 8 * self.lclNNodes # double each comm node
 
+        # ------------------------- Update Subscale ------------------------
+        cl.enqueue_fill_buffer(self.queue, self.projRes_buf, np.float64(0.0), 0, 3*nNodeBytes)
+        
+        # Assemble the projection RHS to do projection.
+        assemble_projRes_events = []
+        for iColorGroup in range(len(self.colorGps_buf)):
+            nElms = len(self.mesh.colorGroups[iColorGroup])
+            assemble_projRes_event = self.program.assemble_projRes(self.queue,
+                (nElms,), (1,), np.int64(nElms), np.int64(self.lclNNodes), 
+                self.colorGps_buf[iColorGroup], self.volumes_buf[iColorGroup],
+                self.DNs_buf[iColorGroup], self.params_buf, self.res_buf, self.preRes_buf,
+                self.hs_buf[iColorGroup], self.elmTaus_buf[iColorGroup],
+                self.sdu_buf[iColorGroup], self.projRes_buf, 
+                wait_for=assemble_projRes_events)
+            assemble_projRes_events = [assemble_projRes_event]
+
+        # Synch projection RHS for multiple processors.
+        if self.size > 1:
+
+            assemble_copy_events = [None] * vDof
+            
+            # Copy the projection RHS sync part. 3 dofs
+            for iCopy in range(vDof):
+                assemble_copy_events[iCopy] = cl.enqueue_copy(self.queue, 
+                    self.projRes[iCopy], self.projRes_buf, device_offset=iCopy*nOffsetBytes,
+                    wait_for=assemble_projRes_events)
+
+            cl.wait_for_events(assemble_copy_events)
+
+            # Synchronize the RHS.
+            self.SyncCommNodes(self.projRes, vDof)
+
+            sync_copy_events = [None] * vDof
+
+            # Copy back the synchronized projRes common parts.
+            for iCopy in range(vDof):
+                sync_copy_events[iCopy] = cl.enqueue_copy(self.queue,
+                    self.projRes_buf, self.projRes[iCopy], device_offset=iCopy*nOffsetBytes)
+
+            cl.wait_for_events(sync_copy_events)
+
+        # Calculate the projection.
+        self.program.calc_projection(self.queue, (self.globalWorkSize,), (self.localWorkSize,), 
+            np.int64(self.num_groups_vDof), np.int64(vDof*self.lclNNodes), 
+            self.lumpLHS_buf, self.projRes_buf)
+
+        # Update the subscale for current time step n.
+        # Update the subscale (II).
+        update_subscales_events = []
+        for iColorGroup in range(len(self.colorGps_buf)):
+            nElms = len(self.mesh.colorGroups[iColorGroup])
+            update_subscales_event = self.program.update_subscales(self.queue,
+                (nElms,), (1,), np.int64(nElms), np.int64(self.lclNNodes), 
+                self.colorGps_buf[iColorGroup], self.elmTaus_buf[iColorGroup],
+                self.projRes_buf, self.sdu_buf[iColorGroup],
+                wait_for=update_subscales_events)
+            update_subscales_events = [update_subscales_event]
+        cl.wait_for_events(update_subscales_events)
+
+
+        # ------------------------- Update Velocity and Pressure ------------------------
         cl.enqueue_fill_buffer(self.queue, self.RHS_buf, np.float64(0.0), 0, self.res.nbytes)
 
         # Assemble the RHS for current time step.
@@ -379,39 +456,43 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
                 self.colorGps_buf[iColorGroup], self.fs_buf,
                 self.volumes_buf[iColorGroup], self.DNs_buf[iColorGroup],
                 self.res_buf, self.preRes_buf, self.params_buf, 
-                self.hs_buf[iColorGroup], self.sdu_buf[iColorGroup], self.RHS_buf, 
+                self.sdu_buf[iColorGroup], self.RHS_buf, 
                 wait_for=assemble_RHS_events)
             assemble_RHS_events = [assemble_RHS_event]
 
         # Synch RHS for multiple processors.
         if self.size > 1:
-            # Copy RHS to CPU for synchronization.
+
             assemble_copy_events = [None] * dof
+            
+            # Copy RHS to CPU for synchronization. 4 dofs
             for iCopy in range(dof):
-                assemble_copy_event = cl.enqueue_copy(self.queue, self.RHS[iCopy], self.RHS_buf,
-                    device_offset=iCopy*nOffsetBytes, wait_for=assemble_RHS_events)
-                assemble_copy_events[iCopy] = assemble_copy_event
+                assemble_copy_events[iCopy] = cl.enqueue_copy(self.queue, 
+                    self.RHS[iCopy], self.RHS_buf, device_offset=iCopy*nOffsetBytes,
+                    wait_for=assemble_RHS_events)
 
             cl.wait_for_events(assemble_copy_events)
 
             # Synchronize the RHS.
             self.SyncCommNodes(self.RHS)
 
-            # Copy back the synchronized RHS common parts.
             sync_copy_events = [None] * dof
+
+            # Copy back the synchronized RHS common parts.
             for iCopy in range(dof):
-                sync_copy_event = cl.enqueue_copy(self.queue, self.RHS_buf, self.RHS[iCopy],
-                    device_offset=iCopy*nOffsetBytes)
-                sync_copy_events[iCopy] = sync_copy_event
+                sync_copy_events[iCopy] = cl.enqueue_copy(self.queue,
+                    self.RHS_buf, self.RHS[iCopy], device_offset=iCopy*nOffsetBytes)
 
             cl.wait_for_events(sync_copy_events)
 
-        # Update the du, p for next time step, res=res+RHS/lumpLHS.
+        # Update the du, p, projRes for next time step, 
+        #   res=res+RHS/lumpLHS
         self.preRes_buf, self.res_buf = self.res_buf, self.preRes_buf
-        calc_res_event = self.program.calc_res(self.queue,
+        self.program.calc_res(self.queue,
             (self.globalWorkSize,), (self.localWorkSize,), np.int64(self.num_groups),
-            np.int64(dof*self.lclNNodes), np.float64(dt), self.RHS_buf, self.lumpLHS_buf,
-            self.preRes_buf, self.res_buf)
+            np.int64(dof*self.lclNNodes), np.float64(dt), self.RHS_buf,
+            self.lumpLHS_buf, self.preRes_buf, self.res_buf)
+
 
         # Apply Dirichlet B.C.
         # self.ApplyDirichletBCs(t+dt)
@@ -546,7 +627,7 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
     #         self.mesh.DebugSave(filename, counter, vals, uname, pointData)
 
 
-    def SyncCommNodes(self, quant):
+    def SyncCommNodes(self, quant, syncDof=dof):
         """ Synchronize the quantity fo common nodes.
         """
 
@@ -557,7 +638,7 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
         commNodeIds = self.mesh.commNodeIds
         commQuant = quant[:,:len(commNodeIds)]
 
-        totalQuant = np.zeros((dof, len(totalCommNodeIds)))
+        totalQuant = np.zeros((syncDof, len(totalCommNodeIds)))
         if self.rank == 0:
 
             # Add on self's (root processor's) quantity.
@@ -565,22 +646,22 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             totalQuant[:,indices] += commQuant
 
             quantIdBuf = np.zeros(len(totalCommNodeIds), dtype=np.int64)
-            quantBuf = np.empty(dof*len(totalCommNodeIds))
+            quantBuf = np.empty(syncDof*len(totalCommNodeIds))
             recvInfo = MPI.Status()
             for i in range(1, self.size):
                 self.comm.Recv(quantIdBuf, MPI.ANY_SOURCE, TAG_COMM_DOF, recvInfo)
                 recvLen = recvInfo.Get_count(MPI.INT64_T)
                 recvSource = recvInfo.Get_source()
                 
-                # quantBuf = np.empty(dof*recvLen)
+                # quantBuf = np.empty(syncDof*recvLen)
                 # Receive the quantity.
                 self.comm.Recv(quantBuf, recvSource, TAG_COMM_DOF_VALUE, recvInfo)
                 # TODO:: make sure the quant received length is consistent with quantIds'.
 
                 # Add the quantity received to the totalQuant.
                 indices = np.where(np.in1d(totalCommNodeIds, quantIdBuf[:recvLen]))[0]
-                # totalQuant[:,indices] += quantBuf.reshape((dof, recvLen))
-                totalQuant[:,indices] += quantBuf[:dof*recvLen].reshape((dof, recvLen))
+                # totalQuant[:,indices] += quantBuf.reshape((syncDof, recvLen))
+                totalQuant[:,indices] += quantBuf[:syncDof*recvLen].reshape((syncDof, recvLen))
 
         else:
 

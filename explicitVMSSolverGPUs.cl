@@ -262,7 +262,7 @@ __kernel void assemble_RHS(const long nElms, const long nNodes,
             {
                 for (uint j = 0; j < 3; ++j)
                 {
-                    lRes[a][i] += wGp*nu*(gradHdu[i][j]+gradHdu[i][j])*DN[j][a];
+                    lRes[a][i] += wGp*nu*(gradHdu[i][j]+gradHdu[j][i])*DN[j][a];
                 }
 
                 lRes[a][i] += wGp*(ahGradHu[i]*lN[iGp][a] \
