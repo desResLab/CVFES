@@ -375,7 +375,7 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
             for i in range(len(self.mesh.colorGroups))]
 
         # Lid-driven cavity case debugging.
-        self.ApplyLidDirichletBCs()
+        # self.ApplyLidDirichletBCs()
 
 
     def Solve(self, t, dt):
@@ -495,8 +495,8 @@ class ExplicitVMSSolverGPUs(PhysicsSolver):
 
 
         # Apply Dirichlet B.C.
-        # self.ApplyDirichletBCs(t+dt)
-        self.ApplyLidDirichletBCs() # lid-driven cavity
+        self.ApplyDirichletBCs(t+dt)
+        # self.ApplyLidDirichletBCs() # lid-driven cavity
 
         # # Apply non-reflection outlet B.C.
         # if self.mesh.lclNOutlet > 0:

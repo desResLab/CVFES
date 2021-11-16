@@ -125,10 +125,10 @@ class Mesh:
 
         # Set the initial conditions.
         self.setInitialConditions(eqnConfig.initialConditions)
-        # self.setBoundaryCondtions(eqnConfig.boundaryConditions)
+        self.setBoundaryCondtions(eqnConfig.boundaryConditions)
 
         # Lid-driven cavity case debugging!
-        self.setLidBoundaryCondtions(eqnConfig.boundaryConditions)
+        # self.setLidBoundaryCondtions(eqnConfig.boundaryConditions)
 
     def readMesh(self, config, meshConfig):
 
